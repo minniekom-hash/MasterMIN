@@ -165,20 +165,32 @@ def api_diag():
         ok, note = False, ""
         try:
             r = fn()
-            # ``bool(r)`` explodes on a DataFrame ("truth value is ambiguous"),
-            # so decide on emptiness explicitly for anything with a length.
+            # ``bool(r)`` explodes on a DataFrame ("truth value is ambiguous"), so
+            # decide emptiness explicitly.  Note that ``.index`` is a *method* on
+            # list/str, not an attribute -- touching it there raises
+            # "builtin_function_or_method object is not subscriptable", which is
+            # why the index branch is restricted to objects that really have one.
             if isinstance(r, dict):
                 ok, note = bool(r), str(r.get("source") or r.get("ts") or "")[:60]
-            elif hasattr(r, "empty") or isinstance(r, (list, tuple, str)):
+            elif isinstance(r, (list, tuple, set)):
                 n = len(r)
                 ok, note = n > 0, f"{n} records"
-                if hasattr(r, "index") and n:
-                    note = f"{n} rows · last {str(r.index[-1])[:10]}"
+            elif isinstance(r, str):
+                ok, note = bool(r.strip()), f"{len(r)} chars"
+            elif hasattr(r, "empty") and hasattr(r, "index"):        # pandas objects
+                n = len(r)
+                ok, note = n > 0, f"{n} rows"
+                if n:
+                    try:
+                        note = f"{n} rows · last {str(r.index[-1])[:10]}"
+                    except Exception:
+                        pass
             else:
                 ok = r is not None
                 note = str(r)[:60]
         except Exception as ex:
-            note = f"{type(ex).__name__}: {str(ex)[:70]}"
+            # a failure inside fn() is a real provider problem
+            ok, note = False, f"{type(ex).__name__}: {str(ex)[:70]}"
         checks.append(dict(name=name, ok=ok, ms=int((time.time() - t0) * 1000), note=note))
 
     probe("CBOE option chain (SPY)", lambda: chain("SPY"))
