@@ -61,7 +61,7 @@ python app.py                 # http://localhost:5000
 
 - **Build Command**
   ```
-  mkdir -p templates && cp -f index.html templates/index.html && pip install -r requirements.txt && (python -c "import nltk; nltk.download('vader_lexicon')" || true)
+  pip install -r requirements.txt
   ```
 - **Start Command**
   ```
@@ -74,6 +74,21 @@ python app.py                 # http://localhost:5000
 **แบบใช้ Blueprint** — มี `render.yaml` ให้แล้ว กด New → Blueprint แล้วชี้มาที่ repo นี้
 
 > แผนฟรีจะหลับหลังไม่มีคนใช้ 15 นาที (ตื่นครั้งแรก 30–60 วิ) และดิสก์เป็นชั่วคราว → ไฟล์สถิติ `omega_track.json` จะหายเมื่อ redeploy
+
+### ตรวจว่า deploy เอาของใหม่ไปใช้จริงหรือยัง
+
+เปิด `https://<ชื่อเว็บ>/health` แล้วดูคำตอบ:
+
+- **ของใหม่ (v2)**: `{"items":...,"ok":true,"version":"2.0.0"}` → ใช้ได้แล้ว
+- **ของเก่า (v1)**: `{"ok":true}` → Render ยังไม่ได้ build โค้ดใหม่
+
+ถ้าเปิดแล้วยังเจอของเก่า ให้ตรวจตามลำดับนี้:
+
+1. **Repo ที่ต่ออยู่ถูกตัวไหม** — Render → Settings → Build & Deploy → Repository
+   ต้องเป็น `minniekom-hash/MasterMIN` และ Branch ต้องเป็น `main`
+2. **Auto-Deploy เปิดอยู่ไหม** — ถ้าปิด ให้กด **Manual Deploy → Deploy latest commit**
+3. **Build ล้มเหลวหรือเปล่า** — ดูแท็บ **Logs** ถ้าล้มให้อ่านบรรทัดที่ error สุดท้าย
+4. **Root Directory** ต้องเว้นว่าง (โค้ดอยู่ที่ root ของ repo)
 
 ## 7. Endpoint
 
