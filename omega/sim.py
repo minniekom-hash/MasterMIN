@@ -48,8 +48,15 @@ def simulate(spot: float, T: float, n_days: int, sigma: float, mu: float,
     if len(rets) >= 90:
         L = int(max(1, min(5, len(rets) // 4)))
         nb = int(math.ceil(n_days / L))
-        idx = (rng.integers(0, len(rets), size=(sims, nb))[:, :, None] + np.arange(L)[None, None, :]) % len(rets)
-        r = rets[idx].reshape(sims, nb * L)[:, :n_days]
+        # Build the bootstrap by walking each block forward with a rolling
+        # index instead of materialising a (sims, nb, L) array.  The 3D form is
+        # several million int64s for every ticker at once, which is enough to
+        # push a 512MB free instance into an OOM kill mid-scan.
+        start = rng.integers(0, len(rets), size=(sims, nb))
+        r = np.empty((sims, nb * L), dtype=float)
+        for k in range(L):
+            r[:, k::L] = rets[(start + k) % len(rets)]
+        r = r[:, :n_days]
         lp = np.cumsum(r, axis=1)
         out["boot"] = (spot * np.exp(lp[:, -1]), spot * np.exp(lp.max(axis=1)), spot * np.exp(lp.min(axis=1)))
 
@@ -70,17 +77,20 @@ def simulate(spot: float, T: float, n_days: int, sigma: float, mu: float,
     dt = T / steps
     drift = (mu - 0.5 * sigma * sigma) * dt
     vol = sigma * math.sqrt(dt)
-    chunk, done = 3000, 0
+    # Small chunks keep peak memory flat: each pass allocates an
+    # (m*2, steps) float64 array, and several of those alive at once is what a
+    # 512MB instance cannot afford.
+    chunk, done = 1500, 0
     st_l, mx_l, mn_l = [], [], []
     while done < sims:
         m = min(chunk, sims - done)
         z = rng.standard_normal((m, steps))
-        use = np.vstack((z, -z))
-        lp = np.cumsum(drift + vol * use, axis=1)
+        lp = np.cumsum(drift + vol * np.vstack((z, -z)), axis=1)
         st_l.append(spot * np.exp(lp[:, -1]))
         mx_l.append(spot * np.exp(lp.max(axis=1)))
         mn_l.append(spot * np.exp(lp.min(axis=1)))
-        done += use.shape[0]
+        done += 2 * m
+        del z, lp
     out["mc"] = (np.concatenate(st_l), np.concatenate(mx_l), np.concatenate(mn_l))
     out["meta"] = dict(sims=sims, n_days=n_days, steps=steps, df=out.get("ft", (None, None, None, None))[3],
                        boot_n=len(rets))
