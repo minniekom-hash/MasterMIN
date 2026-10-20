@@ -292,7 +292,6 @@ def api_diag():
     probe("Yahoo chart (SPY daily)", lambda: daily("SPY"))
     probe("Yahoo quote (SPY)", lambda: yahoo_price("SPY"))
     probe("CNBC RSS", lambda: news.fetch_feed("https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114", False, 3))
-    probe("Yahoo ticker RSS (AAPL)", lambda: news.fetch_feed("https://feeds.finance.yahoo.com/rss/2.0/headline?s=AAPL&region=US&lang=en-US", False, 3))
     probe("SEC EDGAR submissions", lambda: news.sec_filings("AAPL"))
     probe("Stocktwits", lambda: news.stocktwits("AAPL"))
     probe("Alpha Vantage news", lambda: news.alphavantage("AAPL"))

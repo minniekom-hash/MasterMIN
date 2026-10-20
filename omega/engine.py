@@ -59,6 +59,10 @@ REFRESH_SEC = env_int("REFRESH_SEC", 180)
 # 2 keeps a 512MB free instance comfortable; the scan is network-bound, so the
 # wall-clock cost of parallelism here is small compared with the memory saved.
 SCAN_WORKERS = env_int("SCAN_WORKERS", 2)
+# How many full analyses may run simultaneously (scan workers + a detail view or
+# a diag probe).  Keeping this at the scan worker count means extra callers wait
+# instead of stacking another ~25MB of pandas working set on the heap.
+ANALYZE_SLOTS = env_int("ANALYZE_SLOTS", max(1, SCAN_WORKERS))
 WEIGHTS = {"A": 0.16, "B": 0.12, "C": 0.16, "D": 0.22, "E": 0.14, "H": 0.20}
 TARGET_DELTA = 0.40
 
@@ -518,6 +522,17 @@ def analyze(sym: str) -> dict | None:
     if not sym:
         return None
 
+    # Bound how many full analyses run at once.  A single analyze() peaks around
+    # 25MB of pandas/numpy working set, and each one also opens its own fetch
+    # pool, so N of them at once is N x that plus N pools of threads.  On a
+    # 512MB free instance, letting a scan, a diag probe and a detail view pile up
+    # was what pushed the worker into an OOM kill mid-cycle.  Serialising past
+    # ANALYZE_SLOTS keeps the ceiling flat no matter who asks for work.
+    with _ANALYZE_SLOTS:
+        return _analyze_inner(sym)
+
+
+def _analyze_inner(sym: str) -> dict | None:
     # The four slowest steps are independent network fetches, so run them
     # together instead of one after another.  On a free instance this is the
     # difference between a scan that finishes and one that appears to hang.
@@ -941,6 +956,9 @@ _STATE_LOCK = threading.Lock()
 # scan both take it, so two passes can never run at the same time and corrupt
 # the progress counter (or double the memory pressure on a free instance).
 scan_lock = threading.Lock()
+# Bounds concurrent analyze() calls from every caller: the scan workers, the
+# on-demand detail view and the diagnostics probe all funnel through this.
+_ANALYZE_SLOTS = threading.Semaphore(ANALYZE_SLOTS)
 
 
 def scan_once() -> None:
