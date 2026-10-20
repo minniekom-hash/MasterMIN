@@ -977,12 +977,17 @@ _HEARTBEAT = {"t": 0.0, "done": 0}
 
 
 def scan_stalled(idle_sec: float = 150.0) -> bool:
-    """True when a scan is running but has made no progress for a long time."""
+    """True when a scan is running but has made no progress for a long time.
+
+    A held lock with no heartbeat at all also counts as stalled: that is the
+    shape of a pass that wedged before it could begin, which is precisely the
+    state that used to leave the dashboard empty until the next deploy.
+    """
     if not scan_lock.locked():
         return False
     last = _HEARTBEAT.get("t") or 0.0
     if not last:
-        return False
+        return True
     return (time.time() - last) > idle_sec
 
 
@@ -991,6 +996,11 @@ def scan_once() -> None:
     if not scan_lock.acquire(blocking=False):
         log.info("scan_once skipped: another scan is already running")
         return
+    # Stamp the heartbeat the instant the pass owns the lock.  Setting it only
+    # inside the body would leave a window where a pass is "running" (lock held)
+    # with no heartbeat at all, which the watchdog would read as healthy.
+    _HEARTBEAT["t"] = time.time()
+    _HEARTBEAT["done"] = 0
     try:
         _scan_once_locked()
     finally:
@@ -1002,7 +1012,6 @@ def _scan_once_locked() -> None:
     items, errs, cands = [], [], []
     total = len(WATCHLIST)
     _HEARTBEAT["t"] = time.time()
-    _HEARTBEAT["done"] = 0
     with _STATE_LOCK:
         STATE["progress"] = dict(done=0, total=total, current="")
         STATE["universe"] = list(WATCHLIST)

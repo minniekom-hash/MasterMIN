@@ -34,6 +34,18 @@ BROWSER_UAS = [
 # SEC requires an honest, contactable User-Agent.
 SEC_UA = f"OmegaSingularityEngine/{VERSION} (research; contact: {CONTACT})"
 
+# A process-wide floor on socket operations.  requests' own timeout covers the
+# connect and the read, but *not* DNS resolution, and a resolver that never
+# answers is a classic way for one call to hang a worker forever -- which is
+# exactly what parked the scan at 0/15 while the process looked perfectly
+# healthy.  setdefaulttimeout() bounds every socket, including getaddrinfo.
+import socket as _socket
+
+try:
+    _socket.setdefaulttimeout(20.0)
+except Exception:
+    pass
+
 
 # --------------------------------------------------------------------------- #
 # env helpers

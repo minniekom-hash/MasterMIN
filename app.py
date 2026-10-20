@@ -105,7 +105,15 @@ def _watchdog():
     wedged on a provider that never answers, so the lock stays held and no new
     pass can ever start.  Detecting that by *progress* rather than by thread
     existence is what turns a permanently blank page into a self-healing one.
+
+    Python cannot kill a thread stuck in a syscall, so a single release() is not
+    always enough: a ghost worker can still be holding the analysis semaphore.
+    The escalation is therefore deliberate -- first try to unstick cheaply, and
+    if the pass is *still* wedged after another window, exit the process and let
+    the platform start a clean one.  On a free instance that is a few seconds of
+    downtime, which beats an empty dashboard forever.
     """
+    unstuck_at = 0.0
     while True:
         time.sleep(60)
         try:
@@ -116,15 +124,25 @@ def _watchdog():
                     threading.Thread(target=fn, daemon=True, name=name).start()
 
             if engine.scan_stalled(150.0):
-                log.warning("watchdog: scan made no progress for 150s -- "
-                            "releasing the lock so a fresh pass can start")
-                try:
-                    engine.scan_lock.release()
-                except Exception:
-                    pass
-                # A wedged worker can never recover its own slot; give the new
-                # pass a clean semaphore so it is not blocked behind ghosts.
-                engine._ANALYZE_SLOTS = threading.Semaphore(engine.ANALYZE_SLOTS)
+                if not unstuck_at:
+                    unstuck_at = time.time()
+                    log.warning("watchdog: scan made no progress -- releasing the "
+                                "lock and giving the next pass a fresh semaphore")
+                    try:
+                        engine.scan_lock.release()
+                    except Exception:
+                        pass
+                    engine._ANALYZE_SLOTS = threading.Semaphore(engine.ANALYZE_SLOTS)
+                elif time.time() - unstuck_at > 180.0 and engine.scan_stalled(150.0):
+                    # Still wedged after the cheap fix: the worker is stuck in a
+                    # syscall we cannot interrupt.  A clean process is the only
+                    # reliable cure, and the platform restarts us immediately.
+                    log.error("watchdog: scan still wedged after escalation -- "
+                              "exiting so the platform starts a clean worker")
+                    logging.shutdown()
+                    os._exit(1)
+            else:
+                unstuck_at = 0.0
         except BaseException as ex:
             log.info("watchdog: %s", ex)
 
