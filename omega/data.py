@@ -49,7 +49,13 @@ def _mark(name: str, ok: bool, note: str = "") -> None:
 def _yahoo_chart(sym: str, rng: str, itv: str):
     for host in (1, 2):
         url = f"{YF.format(n=host)}/v8/finance/chart/{sym}?range={rng}&interval={itv}&includePrePost=false&events=div%2Csplit"
-        j = http.json(url, timeout=(5, 18))
+        # Check the breaker *before* dialling.  Yahoo throttles datacentre IPs, and
+        # without this every ticker pays the host's connect+read timeout before
+        # the breaker finally opens -- 15 tickers x 2 hosts is minutes of dead
+        # air that makes the whole scan look like it has hung.
+        if not breaker.healthy(f"query{host}.finance.yahoo.com"):
+            continue
+        j = http.json(url, timeout=(4, 9))
         if not j:
             _mark("Yahoo Chart", False, "เรียกไม่สำเร็จ (ถูกจำกัด/เครือข่าย)")
             continue

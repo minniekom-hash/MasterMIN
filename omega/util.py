@@ -173,7 +173,11 @@ cache = TTLCache()
 class Breaker:
     """Per-host circuit breaker: stop hammering a provider that is refusing us."""
 
-    def __init__(self, threshold: int = 5, cooldown: float = 150.0) -> None:
+    # Two failures is enough to conclude a host is refusing this instance, and a
+    # short cooldown means a host that recovers is picked up again within a
+    # couple of scan cycles.  A high threshold here is what let a blocked Yahoo
+    # spend minutes of the scan budget on timeouts before it was skipped.
+    def __init__(self, threshold: int = 2, cooldown: float = 120.0) -> None:
         self.threshold = threshold
         self.cooldown = cooldown
         self._fail: dict = {}

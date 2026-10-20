@@ -538,13 +538,22 @@ def _analyze_inner(sym: str) -> dict | None:
     # difference between a scan that finishes and one that appears to hang.
     # Every future also gets a hard deadline: a wedged socket must never be
     # able to block the whole scan, which is what kept /api/scan empty.
+    #
+    # The deadlines are deliberately tight and the whole group shares one
+    # budget, because they are *waited on in sequence*: four separate 45s
+    # deadlines would let a single ticker occupy a worker for up to 150s, which
+    # across the watchlist is exactly the "scan hangs at 0/15" symptom.  Every
+    # provider that actually answers from these hosts does so in under 2s.
     from concurrent.futures import ThreadPoolExecutor, TimeoutError as FTimeout
 
-    def take(fut, fallback, secs=45.0):
+    budget = time.time() + 40.0
+
+    def take(fut, fallback):
+        left = max(budget - time.time(), 1.0)
         try:
-            return fut.result(timeout=secs)
+            return fut.result(timeout=left)
         except FTimeout:
-            log.warning("analyze %s: a provider took longer than %.0fs", sym, secs)
+            log.warning("analyze %s: provider deadline hit", sym)
             return fallback
         except Exception:
             return fallback
@@ -558,7 +567,7 @@ def _analyze_inner(sym: str) -> dict | None:
         d = take(f_daily, None)
         intra = take(f_intra, None)
         ch = take(f_chain, None)
-        name = take(f_name, "", 15.0)
+        name = take(f_name, "")
     finally:
         # do not block on stragglers: the scan must keep moving even if one
         # worker thread is still stuck on a dead connection
@@ -592,9 +601,9 @@ def _analyze_inner(sym: str) -> dict | None:
     _nat = _TPE(max_workers=1)
     try:
         _fut = _nat.submit(news.for_ticker, sym, name)
-        ns = _fut.result(timeout=60.0)
+        ns = _fut.result(timeout=25.0)
     except _FTO:
-        log.warning("analyze %s: news took longer than 60s -- continuing without it", sym)
+        log.warning("analyze %s: news took longer than 25s -- continuing without it", sym)
         ns = {}
     except Exception as ex:
         log.info("analyze %s: news failed (%s)", sym, type(ex).__name__)
