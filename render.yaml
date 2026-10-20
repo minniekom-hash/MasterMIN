@@ -1,13 +1,26 @@
 services:
   - type: web
-    name: omega-singularity-engine
+    name: mastermin
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt && python -c "import nltk; nltk.download('vader_lexicon')"
-    startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 120 --bind 0.0.0.0:$PORT
+    region: singapore
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 1 --threads 8 --timeout 300 --bind 0.0.0.0:$PORT
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: WATCHLIST
+        value: SPY,QQQ,IWM,AAPL,NVDA,TSLA,AMD,PLTR,SOFI,INTC,MU,COIN,MARA,SNAP,F
+      - key: REFRESH_SEC
+        value: "180"
+      - key: SIMS
+        value: "12000"
+      - key: CONTACT_EMAIL
+        sync: false
+      - key: ALPHAVANTAGE_KEY
+        sync: false
       - key: NEWSAPI_KEY
         sync: false

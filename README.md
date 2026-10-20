@@ -1,17 +1,100 @@
-# OPTION TRADE: Omega Singularity Engine
+# OPTION TRADE · The Omega Singularity Engine v2
 
-ระบบวิเคราะห์ออปชันรายสัปดาห์ด้วยโมเดล 5 ชั้น (Monte Carlo, BSM Greeks, Order Flow, Technical, NLP) — เพื่อการศึกษาเท่านั้น ไม่ใช่คำแนะนำการลงทุน
+เว็บวิเคราะห์ **ออปชันหุ้นสหรัฐ** ที่ดึงข้อมูลจริงจากอินเทอร์เน็ต (ข่าวต่างประเทศ, ราคา, โซ่ราคาออปชัน, กรีกส์, เอกสาร SEC)
+แล้วตอบคำถามเดียวให้ชัดเจน: **สัญญานี้มีโอกาสชนะกี่เปอร์เซ็นต์ และเพราะอะไร**
 
-## รันในเครื่อง
-    pip install -r requirements.txt
-    python app.py   # เปิด http://localhost:5000
+> ⚠️ เครื่องมือวิจัยเท่านั้น ไม่ใช่คำแนะนำการลงทุน ตัวเลขเป็นความน่าจะเป็นจากแบบจำลอง ไม่ใช่การรับประกัน
 
-## Deploy บน Render.com
-1. Push โค้ดขึ้น GitHub
-2. Render → New → Blueprint (ใช้ `render.yaml`) หรือ New Web Service
-   - Build: `pip install -r requirements.txt && python -c "import nltk; nltk.download('vader_lexicon')"`
-   - Start: `gunicorn app:app --workers 1 --threads 4 --timeout 120 --bind 0.0.0.0:$PORT`
-3. ตั้ง Environment: `NEWSAPI_KEY` (ไม่บังคับ), `WATCHLIST`, `RISK_FREE`
+---
 
-Railway: ใช้ `Procfile` ได้ทันที
-หมายเหตุ: ต้องใช้ `--workers 1` เพราะตัวสแกนทำงานเป็น background thread
+## 1. มันทำอะไร
+
+| หน้า | รายละเอียด |
+|---|---|
+| **Omega Guide** | สัญญาที่ “ถูก + ปริมาณสูง” ของสัปดาห์นี้ จัดอันดับด้วยคะแนน Omega (ให้น้ำหนักโอกาสชนะเป็นอันดับหนึ่ง) |
+| **ตารางเปรียบเทียบรายหุ้น** | ทุกหุ้นใน watchlist: ราคา, สัญญาณรวม, ฝั่งที่ได้เปรียบ, Strike ที่เลือก, โอกาสชนะ + ช่วงความเชื่อมั่น 95%, EV, คะแนน |
+| **ตาราง Strike เต็ม** | กด “รายละเอียด” ของหุ้นตัวไหนก็ได้ → ตาราง CALL/PUT ทุก strike พร้อม **โอกาสชนะ, จบ ITM, แตะระหว่างทาง, สถิติ 6 เดือน, สภาพคล่อง, IV, Δ, Θ, EV, และปุ่ม “ทำไม?”** |
+| **สถิติ 6 เดือน** | ของหุ้นตัวนั้นจริง ๆ: แกว่งเฉลี่ย, P(ขึ้นไปแตะ x%), P(ลงไปแตะ x%), P(ปิดบวกเกิน x%), แรงสุด/แย่สุด, จำนวนวันปิดเหนือ-ใต้ strike |
+| **สุขภาพแหล่งข่าว** | สำนักข่าวไหนตอบกลับได้จากเซิร์ฟเวอร์จริง ใช้กี่ข่าว ตรวจล่าสุดเมื่อไร |
+| **Scoreboard** | ระบบบันทึกทุกคำทำนาย แล้วตัดสินผลจริงเมื่อหมดอายุ → แสดง hit rate จริง + ตารางความแม่นยำ (calibration) |
+
+## 2. แหล่งข้อมูลจริงที่ใช้ (ทดสอบแล้วว่าเรียกได้)
+
+- **CBOE delayed quotes CDN** — โซ่ราคาออปชันทั้งสาย: bid, ask, ปริมาณ, Open Interest, IV และ **กรีกส์ที่ CBOE คำนวณให้** (Δ Γ Θ Vega ρ theo)
+- **Yahoo Finance v8 chart API** — ราคาย้อนหลัง 2 ปี (daily) และ 5 วัน (5 นาที) สำหรับ VWAP/RVOL
+- **Nasdaq API** — ราคาล่าสุด, ชื่อบริษัท, ปฏิทินงบการเงิน
+- **SEC EDGAR** — เอกสารทางการ (8-K, 10-Q, 10-K, SC 13D/G, S-1 …) = แหล่งข่าวระดับทางการ
+- **RSS สำนักข่าวโดยตรง** — CNBC, Yahoo Finance, Nasdaq, WSJ Markets, MarketWatch, Seeking Alpha, Investing.com, Benzinga
+- **Stocktwits** — ความเห็นมหาชน (bullish/bearish/total)
+- **AlphaVantage News** (ใช้ `demo` ได้) และ **NewsAPI** (ถ้ามีคีย์)
+
+> ไม่ใช้ `yfinance` แล้ว เพราะเคยโดน HTTP 429 และทำเธรดค้าง — ทุกการเรียกในระบบนี้มี **hard timeout + circuit breaker ต่อโฮสต์** จึงไม่ค้างอีก
+
+## 3. โอกาสชนะคิดจาก 4 โมเดล แล้วเบลนด์กัน
+
+| โมเดล | หลักการ |
+|---|---|
+| **Lognormal (market-implied)** | ใช้ IV ของสัญญานั้นกับ Black–Scholes แบบ risk-neutral |
+| **Monte-Carlo GBM** | จำลองเส้นทางราคาแบบ antithetic variate + ลาดเอียงตามสัญญาณของเครื่อง |
+| **Circular block bootstrap** | สุ่มซ้ำจาก **ผลตอบแทนจริงของหุ้นตัวนั้น** (ไม่ต้องสมมติ normal, เก็บ fat tail และ autocorrelation ได้) |
+| **Student-t fat tail** | ฟิต tail index จากข้อมูลจริง (kurtosis) |
+
+- ผลลัพธ์ = ค่าเฉลี่ยถ่วงน้ำหนัก + **ช่วงความเชื่อมั่น 95% แบบ Wilson**
+- **EV** คิดจากค่าจ่ายจริงของการจำลอง (payoff − premium) ไม่ใช่สูตรทฤษฎี
+- **ทุกช่องมีค่า n (ขนาดตัวอย่าง)** และคะแนนความน่าเชื่อถือของข้อมูลให้ตรวจได้
+
+## 4. เกณฑ์ “สัญญาถูก + ปริมาณสูง”
+
+พรีเมียม ≤ 3% ของราคาหุ้น และ ≤ $5 · ปริมาณ ≥ 100 หรือ OI ≥ 200 · spread ≤ 25% · Δ อยู่ระหว่าง 0.15–0.70
+(ปรับได้ทั้งหมดผ่าน env: `MAX_PREMIUM_PCT`, `MAX_PREMIUM_ABS`, `MIN_VOL`, `MIN_OI`, `MAX_SPREAD`)
+
+## 5. รันในเครื่อง
+
+```bash
+pip install -r requirements.txt
+python app.py                 # http://localhost:5000
+```
+
+## 6. Deploy บน Render (แผนฟรี)
+
+**แบบไม่ใช้ Blueprint** — ตั้งค่าในหน้า Settings ของ service:
+
+- **Build Command**
+  ```
+  mkdir -p templates && cp -f index.html templates/index.html && pip install -r requirements.txt && (python -c "import nltk; nltk.download('vader_lexicon')" || true)
+  ```
+- **Start Command**
+  ```
+  gunicorn app:app --workers 1 --threads 8 --timeout 300 --bind 0.0.0.0:$PORT
+  ```
+- **Health Check Path**: `/health`
+- **Environment**: `PYTHON_VERSION=3.11.9`, `REFRESH_SEC=180`, `SIMS=12000`, `CONTACT_EMAIL=อีเมลคุณ`
+  (ตัวเลือกเสริม: `ALPHAVANTAGE_KEY`, `NEWSAPI_KEY`, `WATCHLIST`)
+
+**แบบใช้ Blueprint** — มี `render.yaml` ให้แล้ว กด New → Blueprint แล้วชี้มาที่ repo นี้
+
+> แผนฟรีจะหลับหลังไม่มีคนใช้ 15 นาที (ตื่นครั้งแรก 30–60 วิ) และดิสก์เป็นชั่วคราว → ไฟล์สถิติ `omega_track.json` จะหายเมื่อ redeploy
+
+## 7. Endpoint
+
+| Path | หน้าที่ |
+|---|---|
+| `/` | แดชบอร์ด |
+| `/health` | liveness probe |
+| `/api/scan` | สถานะการสแกนล่าสุด (รายหุ้น + screener) |
+| `/api/analyze/<ticker>` | วิเคราะห์หุ้นตัวใดก็ได้แบบสด ๆ รวมตาราง Strike |
+| `/api/sources` | สุขภาพแหล่งข่าว |
+| `/api/track` | สถิติผลจริงของระบบเอง |
+| `/api/diag` | ทดสอบผู้ให้ข้อมูลทุกตัวจากเซิร์ฟเวอร์ที่รันอยู่ + ค่าคอนฟิกที่ใช้จริง |
+
+## 8. ข้อจำกัดที่ต้องรู้ (พูดตรง ๆ)
+
+1. ราคาออปชันจาก CBOE เป็น **delayed** ไม่ใช่เรียลไทม์
+2. โอกาสชนะที่สูง **ไม่ได้แปลว่าคุ้ม** — ออปชันราคาถูกมีโอกาสหมดค่าเป็นศูนย์สูง ต้องดู EV และจุดคุ้มทุนเสมอ
+3. “สถิติ 6 เดือน” คืออดีต ไม่ได้รับประกันอนาคต โดยเฉพาะช่วงมีข่าวใหญ่
+4. งบการเงิน (earnings) ทำให้ IV ถล่ม (IV crush) แม้ทายทิศทางถูก — ระบบเตือนเมื่อเจอ
+5. แผนฟรีของ Render หลับ/รีสตาร์ตได้ → สถิติที่สะสมจะเริ่มนับใหม่ (หน้านี้บอกไว้ชัดเจน ไม่แอบอ้าง)
+
+---
+
+สร้างโดย `MasterMIN` · ทุกการคำนวณอยู่ในโฟลเดอร์ `omega/` (`sim.py` = สถิติ+จำลอง, `quant.py` = อินดิเคเตอร์, `data.py` = แหล่งข้อมูล, `news.py` = ข่าว, `engine.py` = สมองรวม, `track.py` = ให้คะแนนตัวเอง)

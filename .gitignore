@@ -4,3 +4,8 @@ __pycache__/
 .venv/
 venv/
 .DS_Store
+
+# runtime state (ephemeral on Render; must never be committed)
+omega_track.json
+*.log
+
