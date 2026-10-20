@@ -515,29 +515,33 @@ def analyze(sym: str) -> dict | None:
     # The four slowest steps are independent network fetches, so run them
     # together instead of one after another.  On a free instance this is the
     # difference between a scan that finishes and one that appears to hang.
-    from concurrent.futures import ThreadPoolExecutor
+    # Every future also gets a hard deadline: a wedged socket must never be
+    # able to block the whole scan, which is what kept /api/scan empty.
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FTimeout
 
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    def take(fut, fallback, secs=45.0):
+        try:
+            return fut.result(timeout=secs)
+        except FTimeout:
+            log.warning("analyze %s: a provider took longer than %.0fs", sym, secs)
+            return fallback
+        except Exception:
+            return fallback
+
+    pool = ThreadPoolExecutor(max_workers=4)
+    try:
         f_daily = pool.submit(data.daily, sym)
         f_intra = pool.submit(data.intraday, sym)
         f_chain = pool.submit(data.chain, sym)
         f_name = pool.submit(data.company_name, sym)
-        try:
-            d = f_daily.result()
-        except Exception:
-            d = None
-        try:
-            intra = f_intra.result()
-        except Exception:
-            intra = None
-        try:
-            ch = f_chain.result()
-        except Exception:
-            ch = None
-        try:
-            name = f_name.result()
-        except Exception:
-            name = ""
+        d = take(f_daily, None)
+        intra = take(f_intra, None)
+        ch = take(f_chain, None)
+        name = take(f_name, "", 15.0)
+    finally:
+        # do not block on stragglers: the scan must keep moving even if one
+        # worker thread is still stuck on a dead connection
+        pool.shutdown(wait=False)
 
     if (d is None or d.empty) and not ch:
         return None
@@ -560,7 +564,22 @@ def analyze(sym: str) -> dict | None:
     hv_gk = quant.vol_garman_klass(d["Open"], d["High"], d["Low"], d["Close"], 30) if len(d) > 35 else hv_close
     sigma_hist = float(np.clip(np.mean([hv_close, hv_park, hv_gk]), 0.03, 3.0))
 
-    ns = news.for_ticker(sym, name)
+    # News runs on its own thread with a deadline: it fans out to a dozen
+    # publisher feeds, and one unresponsive site must not hold up the ticker.
+    from concurrent.futures import ThreadPoolExecutor as _TPE, TimeoutError as _FTO
+
+    _nat = _TPE(max_workers=1)
+    try:
+        _fut = _nat.submit(news.for_ticker, sym, name)
+        ns = _fut.result(timeout=60.0)
+    except _FTO:
+        log.warning("analyze %s: news took longer than 60s -- continuing without it", sym)
+        ns = {}
+    except Exception as ex:
+        log.info("analyze %s: news failed (%s)", sym, type(ex).__name__)
+        ns = {}
+    finally:
+        _nat.shutdown(wait=False)
     c_sig, c_info = flow_signal(d, intra, ch)
     d_sig, d_info = tech_signal(d, cache.wrap("d:SPY", 900, lambda: data.daily("SPY")))
     e_sig, e_info = news_signal(ns)
