@@ -83,12 +83,34 @@ def _scan_loop():
             except Exception as ex:
                 log.info("track evaluate: %s", ex)
             first = False
-        except Exception as ex:
+        except BaseException as ex:            # never let the worker die
             log.exception("scan loop error: %s", ex)
         # If the very first cycle fails we must not sleep for a whole refresh
         # window -- retry sooner so a transient network fault self-heals.
         nap = 30.0 if first else max(REFRESH_SEC - (time.time() - t0), 15.0)
-        time.sleep(nap)
+        try:
+            time.sleep(nap)
+        except BaseException:
+            pass
+
+
+def _watchdog():
+    """Restart a background worker if it ever stops.
+
+    A scanner that dies silently leaves the dashboard empty with no clue why,
+    which is exactly the failure this project kept hitting; the watchdog makes
+    that state self-healing instead of requiring a redeploy.
+    """
+    while True:
+        time.sleep(60)
+        try:
+            names = {t.name for t in threading.enumerate()}
+            for fn, name in ((_scan_loop, "omega-scan"), (_probe_loop, "omega-probe")):
+                if name not in names:
+                    log.warning("watchdog: %s is gone -- restarting", name)
+                    threading.Thread(target=fn, daemon=True, name=name).start()
+        except BaseException as ex:
+            log.info("watchdog: %s", ex)
 
 
 def _probe_loop():
@@ -110,8 +132,13 @@ def _boot():
             return
         _BOOTED = True
         log.info("booting background workers")
-        threading.Thread(target=_scan_loop, daemon=True, name="omega-scan").start()
-        threading.Thread(target=_probe_loop, daemon=True, name="omega-probe").start()
+        names = {t.name for t in threading.enumerate()}
+        if "omega-scan" not in names:
+            threading.Thread(target=_scan_loop, daemon=True, name="omega-scan").start()
+        if "omega-probe" not in names:
+            threading.Thread(target=_probe_loop, daemon=True, name="omega-probe").start()
+        if "omega-watchdog" not in names:
+            threading.Thread(target=_watchdog, daemon=True, name="omega-watchdog").start()
         log.info("background workers started")
         log.info("Omega v%s booted · watchlist=%s", VERSION, ",".join(engine.WATCHLIST))
 
@@ -145,12 +172,18 @@ def api_scan():
 def api_boot():
     """Show whether the background workers are alive, and start them if not.
 
-    The scan thread is started once at import time.  If that ever failed (or a
-    hosting platform replaced the process without re-importing), the page would
-    sit empty forever with no way to recover short of a redeploy -- so this
-    endpoint reports the live thread list and can restart the workers on demand.
+    The scan thread is started once at import time.  If it ever dies (an
+    unrecoverable error, a platform restart of the worker) the page would sit
+    empty forever, so this reports the live thread list and *revives* a missing
+    worker instead of trusting the one-shot boot flag.
     """
-    _boot()
+    global _BOOTED
+    alive = any(t.name == "omega-scan" for t in threading.enumerate())
+    if not alive:
+        log.warning("/api/boot: scan worker missing -- restarting it")
+        with _BOOT:
+            _BOOTED = False       # force _boot() past its one-shot guard
+        _boot()
     threads = [t.name for t in threading.enumerate()]
     return jsonify(booted=_BOOTED, threads=threads,
                    scan_alive=any(t.name == "omega-scan" for t in threading.enumerate()),
