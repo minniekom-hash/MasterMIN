@@ -5,6 +5,6 @@ pandas>=2.1
 requests>=2.31
 beautifulsoup4>=4.12
 
-# Optional: enables VADER sentiment instead of the built-in finance lexicon.
-# The app auto-detects it (omega/news.py), so a build that skips this still works.
-# nltk>=3.8
+# Sentiment. VADER is used when present; omega/news.py falls back to a built-in
+# finance lexicon if it cannot load, so the app never depends on the download.
+nltk>=3.8

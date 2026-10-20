@@ -63,6 +63,12 @@ python app.py                 # http://localhost:5000
   ```
   pip install -r requirements.txt
   ```
+   ถ้าอยากให้ build ตรวจสอบให้ด้วย ใช้ `sh build.sh` ได้ (ไฟล์นี้มีในรีโปแล้ว และไม่พังแม้ติดตั้ง sentiment ไม่ได้)
+
+  > ⚠️ **ถ้าเคยตั้ง Build Command เป็นเวอร์ชันเก่า** ที่มี `python -c "import nltk; ..."`
+  > ให้ลบออกแล้วเปลี่ยนเป็นคำสั่งข้างบน — ของเก่าจะทำให้ build ล้มด้วย
+  > `ModuleNotFoundError: No module named 'nltk'`
+
 - **Start Command**
   ```
   gunicorn app:app --workers 1 --threads 8 --timeout 300 --bind 0.0.0.0:$PORT
