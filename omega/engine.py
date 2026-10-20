@@ -47,12 +47,18 @@ MAX_SPREAD = env_float("MAX_SPREAD", 0.25)
 MIN_DTE = env_int("MIN_DTE", 1)
 MAX_DTE = env_int("MAX_DTE", 21)
 TARGET_DTE = env_int("TARGET_DTE", 7)
-SIMS = env_int("SIMS", 6000)
+SIMS = env_int("SIMS", 4000)
 HIST_WINDOW = env_int("HIST_WINDOW", 126)      # ~6 months of trading days
 STRIKE_BAND = env_float("STRIKE_BAND", 0.15)   # +/- 15% of spot
-MAX_STRIKES = env_int("MAX_STRIKES", 24)
+# Cap how much per-strike detail is retained for the whole watchlist: every
+# strike keeps its explanation strings, and 15 tickers x 20 strikes is enough
+# JSON to matter on a small instance.
+MAX_STRIKES = env_int("MAX_STRIKES", 18)
 REFRESH_SEC = env_int("REFRESH_SEC", 180)
-SCAN_WORKERS = env_int("SCAN_WORKERS", 3)
+# Each scan worker runs its own small thread pool, so this number multiplies.
+# 2 keeps a 512MB free instance comfortable; the scan is network-bound, so the
+# wall-clock cost of parallelism here is small compared with the memory saved.
+SCAN_WORKERS = env_int("SCAN_WORKERS", 2)
 WEIGHTS = {"A": 0.16, "B": 0.12, "C": 0.16, "D": 0.22, "E": 0.14, "H": 0.20}
 TARGET_DELTA = 0.40
 
