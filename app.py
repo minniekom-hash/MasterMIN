@@ -63,11 +63,16 @@ _BOOTED = False
 
 
 def _scan_loop():
+    log.info("scan loop starting (refresh=%ss, watchlist=%d)", REFRESH_SEC, len(engine.WATCHLIST))
     time.sleep(1.5)
+    first = True
     while True:
         t0 = time.time()
         try:
+            log.info("scan cycle begin")
             engine.scan_once()
+            log.info("scan cycle done in %.1fs (%d items)", time.time() - t0,
+                     len(STATE.get("items", [])))
             for it in STATE.get("items", []):
                 try:
                     track.record(it["ticker"], it.get("best"), it.get("spot"), STATE.get("updated"))
@@ -77,9 +82,13 @@ def _scan_loop():
                 track.evaluate()
             except Exception as ex:
                 log.info("track evaluate: %s", ex)
+            first = False
         except Exception as ex:
             log.exception("scan loop error: %s", ex)
-        time.sleep(max(REFRESH_SEC - (time.time() - t0), 15.0))
+        # If the very first cycle fails we must not sleep for a whole refresh
+        # window -- retry sooner so a transient network fault self-heals.
+        nap = 30.0 if first else max(REFRESH_SEC - (time.time() - t0), 15.0)
+        time.sleep(nap)
 
 
 def _probe_loop():
@@ -100,8 +109,10 @@ def _boot():
         if app.debug and os.environ.get("WERKZEUG_RUN_MAIN") != "true":
             return
         _BOOTED = True
+        log.info("booting background workers")
         threading.Thread(target=_scan_loop, daemon=True, name="omega-scan").start()
         threading.Thread(target=_probe_loop, daemon=True, name="omega-probe").start()
+        log.info("background workers started")
         log.info("Omega v%s booted · watchlist=%s", VERSION, ",".join(engine.WATCHLIST))
 
 

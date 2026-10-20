@@ -52,7 +52,7 @@ HIST_WINDOW = env_int("HIST_WINDOW", 126)      # ~6 months of trading days
 STRIKE_BAND = env_float("STRIKE_BAND", 0.15)   # +/- 15% of spot
 MAX_STRIKES = env_int("MAX_STRIKES", 24)
 REFRESH_SEC = env_int("REFRESH_SEC", 180)
-SCAN_WORKERS = env_int("SCAN_WORKERS", 4)
+SCAN_WORKERS = env_int("SCAN_WORKERS", 3)
 WEIGHTS = {"A": 0.16, "B": 0.12, "C": 0.16, "D": 0.22, "E": 0.14, "H": 0.20}
 TARGET_DELTA = 0.40
 
@@ -511,15 +511,39 @@ def analyze(sym: str) -> dict | None:
     sym = re.sub(r"[^A-Z]", "", sym.upper())[:6]
     if not sym:
         return None
-    d = data.daily(sym)
-    intra = data.intraday(sym)
-    ch = data.chain(sym)
+
+    # The four slowest steps are independent network fetches, so run them
+    # together instead of one after another.  On a free instance this is the
+    # difference between a scan that finishes and one that appears to hang.
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        f_daily = pool.submit(data.daily, sym)
+        f_intra = pool.submit(data.intraday, sym)
+        f_chain = pool.submit(data.chain, sym)
+        f_name = pool.submit(data.company_name, sym)
+        try:
+            d = f_daily.result()
+        except Exception:
+            d = None
+        try:
+            intra = f_intra.result()
+        except Exception:
+            intra = None
+        try:
+            ch = f_chain.result()
+        except Exception:
+            ch = None
+        try:
+            name = f_name.result()
+        except Exception:
+            name = ""
+
     if (d is None or d.empty) and not ch:
         return None
     spot = float(ch["spot"]) if (ch and ch.get("spot")) else (float(d["Close"].iloc[-1]) if not d.empty else 0.0)
     if not spot or not math.isfinite(spot) or spot <= 0:
         return None
-    name = data.company_name(sym)
 
     logret = np.log(d["Close"]).diff().dropna().values if (d is not None and len(d) > 30) else np.array([])
     if len(logret) > 504:

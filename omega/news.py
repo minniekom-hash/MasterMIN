@@ -272,7 +272,11 @@ def fetch_feed(url: str, sec: bool = False, limit: int = 60):
 def general_items():
     def load():
         out = []
-        with ThreadPoolExecutor(max_workers=8) as ex:
+        # Small pool on purpose: this runs *inside* the scan workers, so a wide
+        # pool here multiplies with SCAN_WORKERS into dozens of live threads on
+        # a 512MB free instance.  The HTTP layer already allows 10 concurrent
+        # requests, so a modest thread count still saturates the network.
+        with ThreadPoolExecutor(max_workers=4) as ex:
             futs = {ex.submit(fetch_feed, u): (name, u) for name, u in GENERAL_FEEDS}
             for f in futs:
                 name, url = futs[f]
@@ -733,7 +737,7 @@ def for_ticker(sym: str, name: str = "") -> dict:
 def probe_all() -> dict:
     """Health-check every publisher feed (background loop + /api/sources)."""
     fs = []
-    with ThreadPoolExecutor(max_workers=8) as ex:
+    with ThreadPoolExecutor(max_workers=4) as ex:
         for name, url in GENERAL_FEEDS:
             fs.append((name, ex.submit(fetch_feed, url, False, 5)))
         for name, url in fs:
