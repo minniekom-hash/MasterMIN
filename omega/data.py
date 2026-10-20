@@ -18,11 +18,19 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 import pandas as pd
 
-from .util import SEC_UA, cache, http, log, now_iso
+from .util import SEC_UA, breaker, cache, http, log, now_iso
 
 YF = "https://query{n}.finance.yahoo.com"
 CBOE = "https://cdn.cboe.com/api/global/delayed_quotes"
 NASDAQ = "https://api.nasdaq.com/api/quote"
+
+# host keys the breaker uses for Yahoo's chart API (see util.Http.get)
+YAHOO_HOSTS = ("query1.finance.yahoo.com", "query2.finance.yahoo.com")
+
+
+def yahoo_ok() -> bool:
+    """True while at least one Yahoo host still has a closed circuit."""
+    return any(breaker.healthy(h) for h in YAHOO_HOSTS)
 
 HEALTH: dict = {}
 
@@ -173,9 +181,16 @@ def daily(sym: str, ttl: int = 600) -> pd.DataFrame:
 
     Yahoo is the freshest, but it is also the one that rate-limits hardest; the
     others exist so a single blocked provider can never empty the dashboard.
+    When Yahoo's circuit is already open we skip it entirely for this ticker --
+    otherwise every name in the scan pays a timeout before reaching the
+    alternates, and on a free instance that alone is enough to stall a cycle.
     """
     def load():
-        df, _ = _yahoo_chart(sym, "2y", "1d")
+        df = None
+        if yahoo_ok():
+            df, _ = _yahoo_chart(sym, "2y", "1d")
+        else:
+            _mark("Yahoo Chart", False, "ข้ามชั่วคราว (ถูกจำกัดอัตรา)")
         if df is not None and len(df) >= 120:
             _mark("Yahoo Chart", True)
             return df
@@ -241,9 +256,13 @@ def _cboe_intraday(sym: str):
 
 def intraday(sym: str, ttl: int = 180) -> pd.DataFrame:
     def load():
-        df, _ = _yahoo_chart(sym, "5d", "5m")
-        if df is None or len(df) < 20:
-            df, _ = _yahoo_chart(sym, "1d", "5m")
+        df = None
+        # CBOE's intraday feed also carries per-minute CALL/PUT volume, so when
+        # Yahoo is known to be down it is both the faster and the richer choice.
+        if yahoo_ok():
+            df, _ = _yahoo_chart(sym, "5d", "5m")
+            if df is None or len(df) < 20:
+                df, _ = _yahoo_chart(sym, "1d", "5m")
         if df is not None and len(df) > 10:
             return df
         return _cboe_intraday(sym)

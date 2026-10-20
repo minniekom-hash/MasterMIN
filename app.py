@@ -141,6 +141,24 @@ def api_scan():
     return jsonify(payload)
 
 
+@app.route("/api/boot")
+def api_boot():
+    """Show whether the background workers are alive, and start them if not.
+
+    The scan thread is started once at import time.  If that ever failed (or a
+    hosting platform replaced the process without re-importing), the page would
+    sit empty forever with no way to recover short of a redeploy -- so this
+    endpoint reports the live thread list and can restart the workers on demand.
+    """
+    _boot()
+    threads = [t.name for t in threading.enumerate()]
+    return jsonify(booted=_BOOTED, threads=threads,
+                   scan_alive=any(t.name == "omega-scan" for t in threading.enumerate()),
+                   progress=dict(STATE.get("progress") or {}),
+                   items=len(STATE.get("items") or []),
+                   time=now_iso())
+
+
 @app.route("/api/sources")
 def api_sources():
     return jsonify(clean(news.source_status()))

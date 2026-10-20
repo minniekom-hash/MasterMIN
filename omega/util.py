@@ -168,6 +168,15 @@ class Breaker:
                 self._fail[host] = 0
             return True
 
+    def healthy(self, host: str) -> bool:
+        """True unless this host has tripped the breaker recently.
+
+        Used to *reorder* provider fallbacks: when Yahoo is rate-limiting a
+        datacentre IP, trying it first for every ticker burns the whole scan
+        budget on timeouts before the working providers are ever reached.
+        """
+        return self.allow(host)
+
     def ok(self, host: str) -> None:
         with self._lock:
             self._fail[host] = 0
@@ -203,7 +212,12 @@ class Http:
         s = getattr(self._local, "s", None)
         if s is None:
             s = requests.Session()
-            retry = Retry(total=2, connect=2, read=1, backoff_factor=0.5,
+            # Keep retries short.  A blocked host (Yahoo throttles datacentre IPs)
+            # would otherwise cost several seconds per call, and the scan makes
+            # dozens of calls -- enough to outlive the whole request window on a
+            # free instance.  One quick connect retry is plenty; the circuit
+            # breaker handles a genuinely dead host from then on.
+            retry = Retry(total=1, connect=1, read=0, backoff_factor=0.3,
                           status_forcelist=(429, 500, 502, 503, 504), allowed_methods=frozenset(["GET"]))
             ad = HTTPAdapter(max_retries=retry, pool_connections=12, pool_maxsize=12)
             s.mount("https://", ad)
