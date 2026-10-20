@@ -47,7 +47,7 @@ MAX_SPREAD = env_float("MAX_SPREAD", 0.25)
 MIN_DTE = env_int("MIN_DTE", 1)
 MAX_DTE = env_int("MAX_DTE", 21)
 TARGET_DTE = env_int("TARGET_DTE", 7)
-SIMS = env_int("SIMS", 12000)
+SIMS = env_int("SIMS", 6000)
 HIST_WINDOW = env_int("HIST_WINDOW", 126)      # ~6 months of trading days
 STRIKE_BAND = env_float("STRIKE_BAND", 0.15)   # +/- 15% of spot
 MAX_STRIKES = env_int("MAX_STRIKES", 24)
@@ -860,8 +860,9 @@ def scan_once() -> None:
     total = len(WATCHLIST)
     with _STATE_LOCK:
         STATE["progress"] = dict(done=0, total=total, current="")
+        STATE["universe"] = list(WATCHLIST)
 
-    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     def work(sym):
         s = sym.strip().upper()
@@ -877,7 +878,12 @@ def scan_once() -> None:
         return s, r, None
 
     with ThreadPoolExecutor(max_workers=SCAN_WORKERS) as ex:
-        for sym, r, err in ex.map(work, WATCHLIST):
+        futs = {ex.submit(work, s): s for s in WATCHLIST}
+        # Publish each ticker the moment it lands rather than waiting for the
+        # slowest one.  On a free instance the full pass can take a while, and an
+        # empty page for minutes looks broken even though work is happening.
+        for fut in as_completed(futs):
+            sym, r, err = fut.result()
             with _STATE_LOCK:
                 STATE["progress"]["done"] += 1
                 STATE["progress"]["current"] = sym
@@ -894,6 +900,14 @@ def scan_once() -> None:
                     cd["flow_score"] = r.get("flow_score")
                     cd["news_score"] = r.get("news_score")
                     cands.append(cd)
+
+                items.sort(key=lambda x: -(x.get("omega") or 0))
+                cands.sort(key=lambda x: -(x.get("omega") or 0))
+                with _STATE_LOCK:
+                    STATE["items"] = list(items)
+                    STATE["screener"] = list(cands[:40])
+                    STATE["updated"] = now_iso()
+                    STATE["progress"]["total"] = total
 
     items.sort(key=lambda r: -(r.get("omega") or 0))
     cands.sort(key=lambda c: -(c.get("omega") or 0))

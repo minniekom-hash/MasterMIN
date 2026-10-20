@@ -16,7 +16,7 @@ services:
       - key: REFRESH_SEC
         value: "180"
       - key: SIMS
-        value: "12000"
+        value: "6000"
       - key: CONTACT_EMAIL
         sync: false
       - key: ALPHAVANTAGE_KEY
