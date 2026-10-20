@@ -439,6 +439,45 @@ function whyBlock(s){
   '</div>';
 }
 
+function horizonSide(s, cls, label){
+  if(!s) return '<div class="tiny dim" style="margin:4px 0">ไม่พบ '+label+' ที่มีสภาพคล่องพอ</div>';
+  const win = s.kind==='CALL'?'call':'put';
+  return '<div class="card" style="margin:6px 0;padding:9px;border-left:3px solid '+(win==='call'?'var(--green,#2ecc71)':'var(--red,#e74c3c)')+'">'+
+    '<div class="row" style="justify-content:space-between;align-items:center">'+
+      '<b class="'+win+'">'+label+' $'+s.strike+'</b>'+
+      '<span class="tag '+(s.verdict==='ULTIMATE'?'gold':s.verdict==='HIGH'?'green':'blue')+'">'+esc(s.verdict)+' '+f2(s.omega,0)+'</span>'+
+    '</div>'+
+    '<div class="big '+pcol(s.pop)+'" style="font-size:22px">'+f2(s.pop,1)+'% <span class="tiny dim">โอกาสชนะ</span></div>'+
+    '<div class="tiny dim">ช่วงความเชื่อมั่น 95% '+f2(s.pop_lo,1)+'–'+f2(s.pop_hi,1)+'% · จบ ITM '+f2(s.p_itm,0)+'%</div>'+
+    '<div class="tiny" style="margin-top:4px">พรีเมียม <b class="mono">'+money(s.premium)+'</b> · ต้องปิดให้ถึง <b class="mono">'+money(s.breakeven)+'</b></div>'+
+    '<div class="tiny dim">สถิติ 6 เดือนสูตรเดียวกันชนะ '+f2(s.hist_win,0)+'% จาก '+(s.hist_n||0)+' รอบ (ต่างจากโมเดล '+sgn(s.hist_edge)+' จุด)</div>'+
+    (s.cheap?'':'<div class="tiny" style="color:#e6b34a">พรีเมียมยังไม่ถูกตามเกณฑ์</div>')+
+  '</div>';
+}
+
+function horizonPanel(r){
+  const hz = r.horizons||{};
+  const keys = Object.keys(hz).map(Number).filter(n=>!isNaN(n)).sort((a,b)=>a-b);
+  if(!keys.length) return '<div class="dim tiny">ยังไม่มีข้อมูลตามช่วงเวลา</div>';
+  return '<div class="grid g3">'+keys.map(k=>{
+    const v = hz[String(k)]||hz[k];
+    if(!v || v.error) return '<div class="card"><b class="gold2">'+k+' วัน</b><div class="tiny dim">'+esc((v&&v.error)||'ไม่มีข้อมูล')+'</div></div>';
+    const win = v.winner==='CALL'?'call':'put';
+    return '<div class="card">'+
+      '<div class="row" style="justify-content:space-between;align-items:center">'+
+        '<b class="gold2">'+k+' วัน</b>'+
+        '<span class="tag '+(win==='call'?'green':'red')+'">'+v.winner+' ได้เปรียบ</span>'+
+      '</div>'+
+      '<div class="tiny dim">หมดอายุ '+esc(v.expiry||'')+' (อีก '+f2(v.dte,0)+' วัน) · ตลาดคาดแกว่ง ±'+money(v.expected_move)+'</div>'+
+      (v.note?'<div class="tiny" style="color:#e6b34a;margin-top:3px">'+esc(v.note)+'</div>':'')+
+      horizonSide(v.call,'call','CALL')+
+      horizonSide(v.put,'put','PUT')+
+      '<div class="tiny dim" style="margin-top:5px"><b>CALL ทำไม:</b> '+esc(v.call_reason||'')+'</div>'+
+      '<div class="tiny dim" style="margin-top:3px"><b>PUT ทำไม:</b> '+esc(v.put_reason||'')+'</div>'+
+    '</div>';
+  }).join('')+'</div>';
+}
+
 function renderDetail(r){
   dTitle.textContent = r.ticker + ' · ' + (r.name||'');
   dSub.innerHTML = 'ราคา <b class="mono">'+money(r.spot)+'</b> ('+esc(r.spot_source||'')+') · IV '+f2(r.atm_iv,1)+'% · '+
@@ -488,6 +527,11 @@ function renderDetail(r){
         (bc.pop>=bp.pop? 'ฝั่ง CALL มีความน่าจะเป็นสูงกว่า' : 'ฝั่ง PUT มีความน่าจะเป็นสูงกว่า')+
         ' · อย่าลืมว่า “โอกาสชนะสูง” ไม่ได้แปลว่า “คุ้มค่า” เสมอ เพราะจุดคุ้มทุนห่างจากราคาปัจจุบันไม่เท่ากัน') : 'ข้อมูลไม่พอ')+
     '</div>'+
+
+    '<h3>เลือกตามเวลาที่คุณจะถือ: CALL/PUT strike ไหนโอกาสชนะสูงสุด (3 / 5 / 10 วัน)</h3>'+
+    horizonPanel(r)+
+    '<div class="tiny dim" style="margin-top:6px">อ่านอย่างไร: แต่ละช่องคือสัญญาที่<b>โอกาสชนะสูงสุด</b>ในช่วงเวลานั้น (ต้องมีพรีเมียมถูกและมีปริมาณจริง) · '+
+    'ตัวเลขโอกาสชนะมาจากการจำลอง 4 วิธีที่ระยะเวลาของช่องนั้นเอง ไม่ได้ยืมค่าจากระยะอื่น · ถ้าโซ่ตัวเลือกไม่มีวันหมดอายุตรงกับที่ขอ ระบบจะใช้ตัวที่ใกล้ที่สุดและกำกับไว้</div>'+
 
     '<h3>ตลาดคาดว่าจะแกว่งแค่ไหนใน '+f2(r.dte,0)+' วัน</h3>'+
     '<div class="grid g4">'+
