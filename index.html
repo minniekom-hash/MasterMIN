@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OPTION TRADE: Omega Singularity Engine</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=Oxanium:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+  body{background:#000;color:#e6e1d3;font-family:'IBM Plex Sans Thai',sans-serif}
+  .num{font-family:'Oxanium',sans-serif;font-variant-numeric:tabular-nums}
+  .amber{color:#ffb000}
+  .glow-hi{color:#ffb000;text-shadow:0 0 18px rgba(255,176,0,.75),0 0 42px rgba(255,176,0,.35)}
+  .glow-ok{color:#35e0ff;text-shadow:0 0 16px rgba(53,224,255,.6)}
+  .glow-no{color:#6b6b66}
+  th{font-weight:600;color:#ffb000;border-bottom:1px solid #3a2e0a;font-size:.8rem}
+  tr.main{border-bottom:1px solid #1c1c1a;cursor:pointer}
+  tr.main:hover{background:#0d0c08}
+  .call{color:#3ddc84}.put{color:#ff4d5e}
+  .bar{height:4px;background:#1c1c1a}.bar>i{display:block;height:100%;background:#ffb000}
+  @media (prefers-reduced-motion:no-preference){.pulse{animation:p 1.4s ease-in-out infinite}@keyframes p{50%{opacity:.35}}}
+  :focus-visible{outline:2px solid #35e0ff;outline-offset:2px}
+</style>
+</head>
+<body class="min-h-screen">
+<header class="flex flex-wrap items-center justify-between gap-4 px-5 py-3 border-b border-[#3a2e0a] bg-[#070600]">
+  <div>
+    <h1 class="num text-xl font-extrabold amber tracking-wide">OMEGA SINGULARITY ENGINE</h1>
+    <p class="text-xs text-neutral-400">ระบบวิเคราะห์ออปชันรายสัปดาห์ด้วยโมเดลเสียงข้างมาก 6 ชั้น</p>
+  </div>
+  <div class="flex gap-8 num">
+    <div><div class="text-xs text-neutral-400 font-sans">นิวยอร์ก (ET)</div><div id="clk-ny" class="text-2xl amber">--:--:--</div><div id="mk" class="text-xs"></div></div>
+    <div><div class="text-xs text-neutral-400 font-sans">ประเทศไทย (GMT+7)</div><div id="clk-th" class="text-2xl amber">--:--:--</div></div>
+    <div class="text-right"><div class="text-xs text-neutral-400 font-sans">อัปเดตถัดไปใน</div><div id="cd" class="text-2xl text-cyan-300">15</div></div>
+  </div>
+</header>
+
+<main class="p-4">
+  <div class="flex items-center justify-between text-xs text-neutral-400 mb-2">
+    <span><span class="pulse text-green-400">●</span> <span id="status">กำลังเชื่อมต่อ…</span> · <a href="#srcpanel" id="srcbadge" class="underline amber">แหล่งข่าว: กำลังตรวจ…</a></span>
+    <span>คลิกแถวเพื่อดู Greeks และบทวิเคราะห์ละเอียด</span>
+  </div>
+  <div class="flex flex-wrap gap-2 items-center mb-3">
+    <input id="lkin" maxlength="5" placeholder="ค้นหาหุ้น US เช่น AAPL" class="bg-black border border-[#3a2e0a] px-3 py-1 num uppercase w-52 text-sm">
+    <button id="lkbtn" class="border border-[#ffb000] amber px-3 py-1 text-sm">วิเคราะห์หุ้นนี้</button><span id="lkmsg" class="text-xs text-neutral-400"></span></div>
+  <div class="overflow-x-auto"><table class="w-full text-sm min-w-[1000px]"><tbody id="lk"></tbody></table></div>
+  <div class="overflow-x-auto">
+  <table class="w-full text-sm min-w-[1000px]">
+    <thead><tr class="text-left">
+      <th class="p-2">ชื่อหุ้น</th><th class="p-2">ราคา</th><th class="p-2">ประเภท</th>
+      <th class="p-2">จุดเข้าซื้อ / หมดอายุ</th><th class="p-2 text-center">โอกาสชนะ (%)</th>
+      <th class="p-2">คำวินิจฉัย</th><th class="p-2">ข้อมูล Greeks &amp; บทวิเคราะห์</th>
+    </tr></thead>
+    <tbody id="rows"><tr><td colspan="7" class="p-10 text-center text-neutral-500">กำลังคำนวณโมเดล Monte Carlo 10,000 เส้นทางต่อหุ้น…</td></tr></tbody>
+  </table>
+  </div>
+  <section id="srcpanel" class="mt-10 border border-[#3a2e0a] bg-[#070600] p-4">
+    <h2 class="amber text-lg font-bold mb-1">ศูนย์ตรวจสอบแหล่งข่าว</h2>
+    <p class="text-xs text-neutral-400 mb-3">ระบบตรวจแต่ละเว็บทุก 10 นาทีผ่าน Google News RSS แหล่งที่เป็นสีเหลืองหรือแดงคือแหล่งที่ยังดึงหัวข้อข่าวไม่ได้ พร้อมสาเหตุและวิธีแก้ไข คอลัมน์ความลึกข้อมูลแสดงว่าอ่านเนื้อหาเต็มได้กี่ข่าว ระบบไม่ข้าม paywall: ถ้าอ่านเต็มไม่ได้จะใช้ใจความหรือหัวข้อ และให้น้ำหนักน้อยลง</p>
+    <div id="srcsum" class="mb-3 text-sm"></div>
+    <div class="overflow-x-auto"><table class="w-full text-xs min-w-[900px]"><thead><tr class="text-left">
+      <th class="p-2">แหล่งข่าว</th><th class="p-2">ประเภท</th><th class="p-2">สถานะ</th><th class="p-2">พบใน 7 วัน</th><th class="p-2">ใช้ในการสแกนล่าสุด</th><th class="p-2">ความลึกข้อมูล</th><th class="p-2">ตรวจล่าสุด (ไทย)</th><th class="p-2">สาเหตุ / วิธีแก้</th>
+    </tr></thead><tbody id="srcrows"></tbody></table></div>
+    <h3 class="amber font-semibold mt-5 mb-2 text-sm">ช่องทางดึงข้อมูลข่าว</h3><div id="fetchers" class="text-xs space-y-1"></div>
+    <h3 class="amber font-semibold mt-5 mb-2 text-sm">ข้อผิดพลาดและหุ้นที่ถูกข้ามในการสแกนล่าสุด</h3><ul id="scanerr" class="text-xs space-y-1 text-neutral-300"></ul>
+  </section>
+  <p class="mt-6 text-xs text-neutral-500 max-w-3xl">คำเตือน: ข้อมูลนี้เพื่อการศึกษาเท่านั้น ไม่ใช่คำแนะนำการลงทุน การซื้อออปชันมีความเสี่ยงสูงและอาจสูญเสียเงินลงทุนทั้งหมด ข้อมูลจาก Yahoo Finance อาจล่าช้า และ IV Rank คำนวณเทียบกับความผันผวนจริงย้อนหลัง 6 เดือน</p>
+</main>
+
+<script>
+const REFRESH = {{ refresh }};
+const V = {ULTIMATE:["🔥 ULTIMATE ALPHA","glow-hi"], HIGH:["⚡ HIGH POTENTIAL","glow-ok"], NONE:["❌ NO EDGE","glow-no"]};
+const openRows = new Set();
+const fmt = (tz)=>new Intl.DateTimeFormat('en-GB',{timeZone:tz,hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
+const ny=fmt('America/New_York'), th=fmt('Asia/Bangkok');
+function tick(){
+  const n=new Date();
+  document.getElementById('clk-ny').textContent=ny.format(n);
+  document.getElementById('clk-th').textContent=th.format(n);
+  const p=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',weekday:'short',hour:'numeric',minute:'numeric',hour12:false}).formatToParts(n).map(x=>[x.type,x.value]));
+  const m=(+p.hour%24)*60+ +p.minute, wd=!['Sat','Sun'].includes(p.weekday), o=wd&&m>=570&&m<960;
+  const el=document.getElementById('mk'); el.textContent=o?'ตลาดเปิด':'ตลาดปิด'; el.className='text-xs '+(o?'text-green-400':'text-red-400');
+}
+setInterval(tick,1000); tick();
+
+const bar=(l,v)=>`<div class="mb-2"><div class="flex justify-between text-xs"><span>${l}</span><span class="num">${v.toFixed(1)}</span></div><div class="bar"><i style="width:${v}%"></i></div></div>`;
+const sgn=(x)=>x>0?'+':'';
+function note(r){
+  const side=r.type==='CALL'?'ขาขึ้น':'ขาลง';
+  const flow=r.flow.rvol>1.5?'ปริมาณซื้อขายสูงกว่าปกติ':'ปริมาณซื้อขายปกติ';
+  const div=r.flow.div>0?'พบสัญญาณสะสมของสถาบัน':r.flow.div<0?'พบสัญญาณกระจายสินค้า':'ไม่พบ Divergence ของ Price-Volume';
+  return `โมเดลโน้มเอียง${side}; ราคาเทียบ VWAP ${r.price>=r.flow.vwap?'อยู่เหนือ':'อยู่ใต้'} ($${r.flow.vwap.toFixed(2)}), ${flow} (RVOL ${r.flow.rvol.toFixed(2)}), ${div}. RSI ${r.tech.rsi.toFixed(1)}, MACD Hist ${r.tech.macd_hist.toFixed(3)}. IV ${r.iv_tag} (Rank ${r.iv_rank}). ${r.news.note||('ข่าวที่วิเคราะห์ '+r.news.n+' ชิ้น')}`;
+}
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const f=(x,d=1)=>x==null?'-':Number(x).toFixed(d);
+function extra(r){
+  const n=r.news, t=r.tech;
+  const heads=(n.items||[]).map(i=>{const col=i.c>0.05?'text-green-400':i.c<-0.05?'text-red-400':'text-neutral-400';
+    const u=/^https:\/\//.test(i.url)?`<a class="underline" href="${esc(i.url)}" target="_blank" rel="noopener noreferrer">${esc(i.t)}</a>`:esc(i.t);
+    return `<li class="mb-1"><span class="${col} num">${i.c>0?'+':''}${i.c}</span> ${u} <span class="text-neutral-500">— ${esc(i.s)}, ${i.h} ชม.</span> ${DP[i.depth]||''}${i.mismatch?' <span class="text-red-400">⚠ หัวข้อไม่ตรงเนื้อหา</span>':''}</li>`}).join('');
+  const srcs=Object.entries(n.sources||{}).map(([k,v])=>`<span class="border border-[#3a2e0a] px-2 py-0.5 mr-1 mb-1 inline-block text-xs">${esc(k)} ${v}</span>`).join('');
+  return `<div class="grid md:grid-cols-3 gap-6 mt-5 pt-4 border-t border-[#1c1c1a] text-sm">
+   <div class="num space-y-1"><h4 class="amber font-semibold mb-2 font-sans">โอกาสของ Strike $${r.strike}</h4>
+     <div>หมดอายุ ITM (Monte Carlo): ${f(r.mc_itm)}%</div><div>กำไรเมื่อหมดอายุ: ${f(r.mc_profit)}%</div>
+     <div>ราคาแตะ Strike ก่อนหมดอายุ: ${f(r.mc_touch)}%</div>
+     <div>สถิติย้อนหลัง (ปรับตามความผันผวน): ${f(r.hist_z)}%</div><div>สถิติย้อนหลัง (ดิบ): ${f(r.hist_raw)}%</div>
+     <div>Expected Move: ±$${r.expected_move}</div>${r.earnings?`<div class="text-red-400 font-sans">⚠ งบออก ${esc(r.earnings)} ก่อนหมดอายุ (เสี่ยง IV Crush)</div>`:''}</div>
+   <div class="num space-y-1"><h4 class="amber font-semibold mb-2 font-sans">สภาพคล่อง &amp; อินดิเคเตอร์</h4>
+     <div>Volume ${r.volume} · OI ${r.oi} · Spread ${f(r.spread_pct)}%</div>
+     <div>${r.liquid?'<span class="text-green-400 font-sans">ผ่านเกณฑ์ราคาถูก+สภาพคล่องสูง</span>':'<span class="text-red-400 font-sans">ไม่ผ่านเกณฑ์สภาพคล่อง/ราคา</span>'}</div>
+     <div>ราคาออปชัน ${f(r.premium_pct,2)}% ของราคาหุ้น</div><div>P/C Ratio ${f(r.pc_ratio,2)} · Skew ${f(r.skew)} pt</div>
+     <div>ADX ${f(t.adx)} · Stoch ${f(t.stoch)} · %B ${f(t.pb,2)} · ATR ${f(t.atr_pct,2)}%${t.squeeze?' · Bollinger Squeeze':''}</div></div>
+   <div><h4 class="amber font-semibold mb-2">ข่าวล่าสุด (${n.n} ชิ้น)</h4><div class="mb-2">${srcs}</div>
+     <ul class="text-xs leading-relaxed">${heads||'<li class="text-neutral-500">'+esc(n.note||'ไม่มีข่าว')+'</li>'}</ul></div></div>${fcheck(n)}`;
+}
+function row(r){
+  const [vt,vc]=V[r.verdict], c=r.type==='CALL'?'call':'put', g=r.greeks, isOpen=openRows.has(r.ticker);
+  const detail=`<tr class="${isOpen?'':'hidden'}" id="d-${r.ticker}"><td colspan="7" class="bg-[#070600] p-4"><div class="grid md:grid-cols-3 gap-6">
+    <div><h4 class="amber font-semibold mb-2">คะแนนรายโมเดล</h4>
+      ${bar('A Monte Carlo (ITM)',r.scores.A)}${bar('B Greeks / IV',r.scores.B)}${bar('C Order Flow',r.scores.C)}${bar('D เทคนิค',r.scores.D)}${bar('E ข่าว (Catalyst)',r.scores.E)}${bar('H สถิติย้อนหลัง',r.scores.H)}</div>
+    <div class="num text-sm space-y-1"><h4 class="amber font-semibold mb-2 font-sans">Greeks (สัญญาที่เลือก)</h4>
+      <div>Δ Delta: ${g.delta}</div><div>Γ Gamma: ${g.gamma}</div><div>Θ Theta/วัน: ${g.theta}</div><div>Vega/1%: ${g.vega}</div>
+      <div>IV: ${r.iv}% (ATM ${r.atm_iv}%)</div><div>IV Rank: ${r.iv_rank} / Percentile: ${r.iv_pct}</div>
+      <div>Catalyst Score: ${r.catalyst}</div></div>
+    <div class="text-sm"><h4 class="amber font-semibold mb-2">บทวิเคราะห์</h4>
+      <p class="text-neutral-300 leading-relaxed">${note(r)}</p>
+      <p class="mt-2 num text-xs text-neutral-400">Expected Move ±$${r.expected_move} (${r.em_low} – ${r.em_high}) · จุดคุ้มทุน $${r.breakeven} · โอกาสแตะ Strike ${r.mc_touch}%</p></div>
+  </div>${extra(r)}</td></tr>`;
+  return `<tr class="main" data-t="${r.ticker}" tabindex="0">
+    <td class="p-3 num text-lg font-bold">${r.ticker}</td>
+    <td class="p-3 num text-lg">$${r.price.toFixed(2)}</td>
+    <td class="p-3 num font-bold ${c}">${r.type==='CALL'?'▲ CALL':'▼ PUT'}</td>
+    <td class="p-3 num">Strike <b>$${r.strike}</b> · ${r.premium?('$'+r.premium):''}<div class="text-xs text-neutral-400 font-sans">หมดอายุ ${r.expiry} (${r.dte} วัน)</div></td>
+    <td class="p-3 text-center"><span class="num text-6xl font-extrabold ${vc}">${r.win_rate.toFixed(1)}</span><span class="num text-2xl ${vc}">%</span></td>
+    <td class="p-3 font-semibold ${vc}">${vt}</td>
+    <td class="p-3 text-xs num text-neutral-300">Δ ${g.delta} · Θ ${g.theta} · IV Rank ${r.iv_rank}<div class="amber font-sans">ดูรายละเอียด ▾</div></td>
+  </tr>${detail}`;
+}
+async function load(){
+  try{
+    const d=await (await fetch('/api/scan',{cache:'no-store'})).json();
+    const st=document.getElementById('status'); showErr(d.errors);
+    if(!d.items.length){st.textContent='รอผลการคำนวณรอบแรก…';return}
+    document.getElementById('rows').innerHTML=d.items.map(row).join('');
+    st.textContent=`สแกน ${d.items.length} ตัว · ใช้เวลา ${d.cycle_sec} วินาที`+(d.errors.length?` · ข้อผิดพลาด ${d.errors.length} รายการ`:'');
+  }catch(e){document.getElementById('status').textContent='เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กำลังลองใหม่…'}
+}
+document.addEventListener('click',e=>{
+  const tr=e.target.closest('tr.main'); if(!tr) return;
+  const t=tr.dataset.t, d=tr.nextElementSibling;
+  d.classList.toggle('hidden'); d.classList.contains('hidden')?openRows.delete(t):openRows.add(t);
+});
+const DP={full:'<span class="text-green-400">[เนื้อหาเต็ม]</span>',summary:'<span class="text-yellow-400">[ใจความ]</span>',headline:'<span class="text-neutral-500">[หัวข้อ]</span>'};
+const VC={'ยืนยันแล้ว':'text-green-400','ยืนยันบางส่วน':'text-yellow-400','ยังไม่ยืนยัน':'text-neutral-400','ขัดแย้ง':'text-red-400'};
+function fcheck(n){const c=n.checks||[]; if(!c.length) return '';
+  return `<div class="mt-4 pt-3 border-t border-[#1c1c1a] text-xs"><h4 class="amber font-semibold mb-2 text-sm">ตรวจสอบข้อเท็จจริงข้ามแหล่งข่าว (อ่านเต็ม ${n.depth.full} · ใจความ ${n.depth.summary} · หัวข้อ ${n.depth.headline})</h4><div class="grid md:grid-cols-2 gap-x-6 gap-y-2">${c.map(x=>`<div><b class="${VC[x.verdict]}">${esc(x.verdict)}</b> · ${esc(x.event)} · ${x.n} ข่าว จาก ${x.sources.length} แหล่ง<div class="text-neutral-500">${x.sources.map(esc).join(', ')}${x.figures.length?' · ตัวเลขที่ตรงกัน: '+x.figures.map(esc).join(', '):''}${x.split?' · ทิศทางข่าวไม่ตรงกัน (บวก '+x.pos+' / ลบ '+x.neg+')':''}</div></div>`).join('')}</div></div>`}
+const ST={ok:['ใช้ได้','text-green-400'],empty:['ไม่พบข่าว','text-yellow-400'],error:['ผิดพลาด','text-red-400'],pending:['รอตรวจ','text-neutral-400'],disabled:['ปิดอยู่','text-neutral-400']};
+const KIND={news:'เว็บข่าว',paywall:'เว็บข่าว (paywall)',data:'เว็บข้อมูล'};
+const tf=iso=>iso?new Intl.DateTimeFormat('th-TH',{timeZone:'Asia/Bangkok',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date(iso)):'-';
+const stb=s=>{const x=ST[s]||ST.pending;return `<span class="${x[1]} font-semibold">${x[0]}</span>`};
+function showErr(e){document.getElementById('scanerr').innerHTML=(e&&e.length)?e.map(x=>`<li>• ${esc(x)}</li>`).join(''):'<li class="text-green-400">ไม่มีข้อผิดพลาด</li>'}
+async function loadSources(){
+  try{
+    const d=await (await fetch('/api/sources',{cache:'no-store'})).json();
+    const bad=d.sources.filter(s=>s.status==='error'||s.status==='empty');
+    const b=document.getElementById('srcbadge'); b.textContent=`แหล่งข่าวใช้ได้ ${d.ok}/${d.total}`; b.className='underline '+(bad.length?'text-yellow-400':'text-green-400');
+    document.getElementById('srcsum').innerHTML=`ใช้ได้ <b class="text-green-400">${d.ok}</b> จาก ${d.total} แหล่ง · ดึงไม่ได้ <b class="text-red-400">${bad.length}</b>`+(bad.length?': '+bad.map(s=>esc(s.name)).join(', '):'')+(d.newsapi_key?'':' · <span class="text-yellow-400">ยังไม่ได้ตั้ง NEWSAPI_KEY (ช่วยเพิ่มความครอบคลุม)</span>');
+    document.getElementById('srcrows').innerHTML=d.sources.map(s=>`<tr class="border-b border-[#1c1c1a] align-top"><td class="p-2 font-semibold">${esc(s.name)}<div class="text-neutral-500 num">${esc(s.domain)}</div></td><td class="p-2">${KIND[s.kind]}</td><td class="p-2">${stb(s.status)}${s.error?`<div class="text-red-400">${esc(s.error)}</div>`:''}</td><td class="p-2 num">${s.count}${s.ms!=null?` <span class="text-neutral-500">(${s.ms} ms)</span>`:''}</td><td class="p-2 num">${s.cover}</td><td class="p-2 num">เต็ม ${s.full} · ใจความ ${s.summary} · ไม่ได้ ${s.none}</td><td class="p-2 num">${tf(s.checked)}</td><td class="p-2 text-neutral-300">${esc(s.hint)||'-'}</td></tr>`).join('');
+    document.getElementById('fetchers').innerHTML=Object.entries(d.fetchers).map(([k,v])=>`<div>${stb(v.status)} <b>${esc(k)}</b> · ข่าว ${v.items} ชิ้น · ล่าสุดสำเร็จ ${tf(v.last_ok)}${v.error?` · <span class="text-red-400">${esc(v.error)}</span>`:''}</div>`).join('');
+  }catch(e){document.getElementById('srcsum').textContent='โหลดสถานะแหล่งข่าวไม่ได้'}
+}
+async function lookup(){
+  const t=document.getElementById('lkin').value.trim().toUpperCase(), m=document.getElementById('lkmsg'), b=document.getElementById('lk');
+  if(!/^[A-Z]{1,5}$/.test(t)){m.textContent='ใส่ ticker หุ้น US 1-5 ตัวอักษร';return}
+  m.textContent='กำลังวิเคราะห์ '+t+' (อาจใช้ 10-30 วินาที)…'; b.innerHTML='';
+  try{const r=await fetch('/api/analyze/'+t), d=await r.json(); if(!r.ok){m.textContent=d.error||'ผิดพลาด';return} m.textContent='ผลวิเคราะห์ '+t; b.innerHTML=row(d)}
+  catch(e){m.textContent='เชื่อมต่อเซิร์ฟเวอร์ไม่ได้'}
+}
+document.getElementById('lkbtn').addEventListener('click',lookup);
+document.getElementById('lkin').addEventListener('keydown',e=>{if(e.key==='Enter')lookup()});
+loadSources(); setInterval(loadSources,30000);
+let left=REFRESH; load();
+setInterval(()=>{ left--; if(left<=0){left=REFRESH; load()} document.getElementById('cd').textContent=left; },1000);
+</script>
+</body>
+</html>

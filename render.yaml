@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: omega-singularity-engine
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt && python -c "import nltk; nltk.download('vader_lexicon')"
+    startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 120 --bind 0.0.0.0:$PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: NEWSAPI_KEY
+        sync: false
