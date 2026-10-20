@@ -255,7 +255,27 @@ function renderScan(){
   const it = scan.items||[];
   const done = (scan.progress&&scan.progress.done)||0, tot=(scan.progress&&scan.progress.total)||0;
   if(!it.length){
-    statusTxt.textContent = 'กำลังสแกน '+(scan.progress&&scan.progress.current?scan.progress.current:'')+' ('+done+'/'+tot+')';
+    // A free instance restarts after idling, so the first visitor after a while
+    // finds an empty page while the first pass runs.  Show what is happening
+    // instead of a blank screen: a live bar, the ticker being worked on, and an
+    // explicit note that waiting is normal.
+    const pct = tot? Math.round(done/tot*100) : 0;
+    const cur = (scan.progress&&scan.progress.current)? scan.progress.current : '';
+    statusTxt.textContent = tot? ('กำลังสแกน '+done+'/'+tot) : 'กำลังเริ่มสแกน…';
+    kpis.innerHTML =
+      kp('สถานะ', tot? 'กำลังสแกน' : 'เริ่มต้นระบบ', 'gold') +
+      kp('คืบหน้า', done+' / '+(tot||'—')) +
+      kp('กำลังวิเคราะห์', cur||'—') +
+      kp('รอบสแกนล่าสุด', (scan.cycle_sec||0)+' วิ');
+    guide.innerHTML =
+      '<div class="banner" style="grid-column:1/-1">'+
+      '<b class="gold2">กำลังดึงข้อมูลจริงจากสำนักข่าวและตลาดออปชัน…</b>'+
+      '<div class="tiny dim" style="margin-top:6px">รอบแรกใช้เวลาราว 1–2 นาที (อินสแตนซ์ฟรีจะหลับเมื่อไม่มีคนใช้ '+
+      'แล้วตื่นใหม่ตอนคุณเปิดหน้า) · ระบบจะทยอยแสดงผลทันทีที่หุ้นแต่ละตัววิเคราะห์เสร็จ'+
+      (cur? ' · กำลังทำ: <b>'+esc(cur)+'</b>':'')+'</div>'+
+      '<div style="height:8px;background:rgba(255,255,255,.08);border-radius:4px;margin-top:10px;overflow:hidden">'+
+      '<div style="height:100%;width:'+pct+'%;background:var(--gold);transition:width .5s"></div></div>'+
+      '</div>';
     return;
   }
   if(done<tot) statusTxt.textContent = 'สแกน '+done+'/'+tot;
