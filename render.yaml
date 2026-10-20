@@ -4,20 +4,33 @@ services:
     runtime: python
     plan: free
     region: singapore
-    buildCommand: pip install -r requirements.txt    startCommand: gunicorn app:app --workers 1 --threads 8 --timeout 300 --bind 0.0.0.0:$PORT
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 1 --threads 8 --timeout 300 --bind 0.0.0.0:$PORT
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.9
+        value: "3.11.9"
       - key: PYTHONUNBUFFERED
         value: "1"
+      # Containers see the host's CPU count, so glibc creates one malloc arena
+      # per thread.  With a scan, a diagnostics probe and the request threads all
+      # alive that means dozens of arenas, each holding freed pages instead of
+      # returning them -- the classic way a Python service grows past its limit
+      # without leaking a single object.  Two arenas keeps the footprint flat.
+      - key: MALLOC_ARENA_MAX
+        value: "2"
+      # Return freed memory to the OS instead of caching it in the allocator.
+      - key: PYTHONMALLOC
+        value: "malloc"
       - key: WATCHLIST
         value: SPY,QQQ,IWM,AAPL,NVDA,TSLA,AMD,PLTR,SOFI,INTC,MU,COIN,MARA,SNAP,F
       - key: REFRESH_SEC
         value: "180"
       - key: SIMS
-        value: "4000"
+        value: "3000"
       - key: SCAN_WORKERS
+        value: "2"
+      - key: ANALYZE_SLOTS
         value: "2"
       - key: CONTACT_EMAIL
         sync: false

@@ -30,7 +30,7 @@ import pandas as pd
 
 from . import data, news, quant, sim
 from .util import (cache, clean, clip, env_float, env_int, env_list, http, log,
-                   now_iso, nz)
+                   now_iso, nz, release_memory)
 
 # --------------------------------------------------------------------------- #
 # configuration
@@ -995,6 +995,13 @@ def _scan_once_locked() -> None:
             return s, None, f"{s}: {r['error']}"
         return s, r, None
 
+    # Container memory is the binding constraint, and CPython will happily sit on
+    # freed pandas frames instead of handing the pages back to the kernel.  Each
+    # ticker's working set is therefore released explicitly the moment it is
+    # summarised, so the resident size dips between tickers rather than only ever
+    # climbing toward the instance limit.
+    import gc
+
     with ThreadPoolExecutor(max_workers=SCAN_WORKERS) as ex:
         futs = {ex.submit(work, s): s for s in WATCHLIST}
         # Publish each ticker the moment it lands rather than waiting for the
@@ -1027,6 +1034,13 @@ def _scan_once_locked() -> None:
                     STATE["screener"] = list(cands[:40])
                     STATE["updated"] = now_iso()
                     STATE["progress"]["total"] = total
+                # ``r`` is the fat, fully-analysed dict; ``slim`` is the copy that
+                # is actually kept.  Drop the original, collect, then ask the
+                # allocator to return the pages to the OS so the resident size
+                # dips here instead of ratcheting up to the instance limit.
+                del r, slim
+                gc.collect()
+                release_memory()
 
     items.sort(key=lambda r: -(r.get("omega") or 0))
     cands.sort(key=lambda c: -(c.get("omega") or 0))

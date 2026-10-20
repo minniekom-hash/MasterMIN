@@ -65,6 +65,28 @@ def env_list(name: str, default: list) -> list:
 
 
 # --------------------------------------------------------------------------- #
+# memory
+# --------------------------------------------------------------------------- #
+def release_memory() -> None:
+    """Ask the allocator to hand freed pages back to the operating system.
+
+    CPython frees objects but glibc keeps the resulting pages in per-thread
+    arenas, so a process that has just analysed 15 tickers can sit at its high
+    water mark forever.  On a 512MB instance that is the difference between
+    finishing a scan and being killed halfway through the next one.
+
+    ``malloc_trim`` is glibc-only and returns those pages; everywhere else this
+    is a deliberate no-op.  It is cheap enough to call after every ticker.
+    """
+    try:
+        import ctypes
+        libc = ctypes.CDLL("libc.so.6")
+        libc.malloc_trim(0)
+    except Exception:
+        pass
+
+
+# --------------------------------------------------------------------------- #
 # time
 # --------------------------------------------------------------------------- #
 def now_iso() -> str:

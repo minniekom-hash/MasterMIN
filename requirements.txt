@@ -8,3 +8,8 @@ beautifulsoup4>=4.12
 # Sentiment. VADER is used when present; omega/news.py falls back to a built-in
 # finance lexicon if it cannot load, so the app never depends on the download.
 nltk>=3.8
+
+# Lets the service report its own resident memory on /api/diag, which is the
+# honest way to tell "the scan is slow" apart from "the instance is about to be
+# killed". Cheap, and optional at runtime.
+psutil>=5.9

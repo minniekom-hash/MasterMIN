@@ -158,7 +158,8 @@ def index():
 @app.route("/health")
 def health():
     return jsonify(ok=True, version=VERSION, updated=STATE.get("updated"),
-                   items=len(STATE.get("items", [])), time=now_iso())
+                   items=len(STATE.get("items", [])), memory=_memory_report(),
+                   time=now_iso())
 
 
 @app.route("/api/scan")
@@ -250,9 +251,39 @@ def api_analyze(t: str):
     return jsonify(clean(res))
 
 
+def _memory_report():
+    """Resident size of this process, so the instance can be watched honestly.
+
+    The most useful single number when a free instance keeps restarting: it says
+    whether the scan is simply slow (memory flat) or the worker is climbing
+    toward the platform limit (memory rising every cycle).
+    """
+    try:
+        import psutil
+        p = psutil.Process(os.getpid())
+        return dict(rss_mb=round(p.memory_info().rss / 1e6, 1),
+                    available_mb=round(psutil.virtual_memory().available / 1e6, 1),
+                    total_mb=round(psutil.virtual_memory().total / 1e6, 1))
+    except Exception:
+        return dict(rss_mb=None, note="psutil ไม่พร้อมใช้งาน")
+
+
 @app.route("/api/diag")
 def api_diag():
-    """Live self-test: which providers answer from the server that runs this."""
+    """Live self-test: which providers answer from the server that runs this.
+
+    The probe touches every provider at once.  On a small instance that is the
+    one request most likely to overlap a scan and push the process over its
+    memory limit, so it politely waits for a scan in progress to finish instead
+    of racing it.  (It is a diagnostic, not a hot path -- a few seconds of
+    patience is the right trade for not getting the worker killed.)
+    """
+    if engine.scan_lock.locked():
+        got = engine.scan_lock.acquire(timeout=120)
+        if got:
+            engine.scan_lock.release()
+        else:
+            return jsonify(error="กำลังสแกนอยู่ กรุณาลอง /api/diag อีกครั้ง", busy=True), 503
     checks = []
 
     def probe(name, fn):
@@ -297,6 +328,7 @@ def api_diag():
     probe("Alpha Vantage news", lambda: news.alphavantage("AAPL"))
     return jsonify(clean(dict(version=VERSION, now=now_iso(), checks=checks,
                               providers=provider_status(), fetchers=news.FETCH,
+                              memory=_memory_report(),
                               watchlist=engine.WATCHLIST, circuit=__import__("omega.util", fromlist=["breaker"]).breaker.state(),
                               config=dict(sims=engine.SIMS, refresh_sec=REFRESH_SEC,
                                           min_vol=engine.MIN_VOL, min_oi=engine.MIN_OI,
