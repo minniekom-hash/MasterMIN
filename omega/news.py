@@ -144,7 +144,17 @@ PUBLISHERS = {
     "NewsAPI": ("newsapi.org", 0.9, "api"),
 }
 
-# (publisher, url) — market-wide headline feeds, fetched once and filtered per ticker
+# (publisher, url) — market-wide headline feeds, fetched once and filtered per ticker.
+#
+# Only feeds that were *measured* to return items are kept.  Dead sources are
+# removed rather than silently retried: each one costs seconds of connect/read
+# timeout on every scan, which on a free instance is time the working feeds need.
+# Verified reachable: CNBC, MarketWatch, WSJ, Bloomberg, FT, Investing.com,
+# Benzinga, IBD, Nasdaq, Motley Fool, Seeking Alpha.
+# Verified dead from this project's hosts and therefore dropped:
+#   Yahoo Finance RSS  -> rate-limited/blocked (0 items)
+#   Barron's           -> HTTP 403, paywall
+#   PR Newswire        -> empty response
 GENERAL_FEEDS = [
     ("CNBC", "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114"),
     ("CNBC", "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=20910258"),
@@ -158,19 +168,15 @@ GENERAL_FEEDS = [
     ("Investing.com", "https://www.investing.com/rss/news_25.rss"),
     ("Investing.com", "https://www.investing.com/rss/news_14.rss"),
     ("Benzinga", "https://www.benzinga.com/feed"),
-    ("Yahoo Finance", "https://feeds.finance.yahoo.com/rss/2.0/headline?s=SPY&region=US&lang=en-US"),
     ("Nasdaq", "https://www.nasdaq.com/feed/rssoutbound?category=Markets"),
     ("Nasdaq", "https://www.nasdaq.com/feed/rssoutbound?category=Stocks"),
-    ("PR Newswire", "https://www.prnewswire.com/rss/news-releases-list.rss"),
     ("IBD", "https://www.investors.com/feed/"),
     ("Motley Fool", "https://www.fool.com/feeds/index.aspx"),
-    ("Barron's", "https://feeds.a.dj.com/rss/RSSBarrons.xml"),
     ("Seeking Alpha", "https://seekingalpha.com/market_currents.xml"),
 ]
 
-# per-ticker feeds
+# per-ticker feeds — Yahoo's ticker RSS returned nothing and is dropped
 TICKER_FEEDS = [
-    ("Yahoo Finance", "https://feeds.finance.yahoo.com/rss/2.0/headline?s={sym}&region=US&lang=en-US"),
     ("Nasdaq", "https://www.nasdaq.com/feed/rssoutbound?symbol={sym}"),
     ("Seeking Alpha", "https://seekingalpha.com/api/sa/combined/{sym}.xml"),
 ]
@@ -333,7 +339,7 @@ def sec_filings(sym: str, days: int = 45, limit: int = 8):
             _mark_src("SEC EDGAR", None, 0, "ไม่พบ CIK")
             return []
         cik = cm[sym.upper()]
-        j = http.json(f"https://data.sec.gov/submissions/CIK{cik:010d}.json", sec=True, timeout=(6, 25))
+        j = http.json(f"https://data.sec.gov/submissions/CIK{cik:010d}.json", sec=True, timeout=(6, 15))
         if not j:
             _mark_fetch("SEC EDGAR filings", False, 0, "ดึงข้อมูลไม่ได้")
             _mark_src("SEC EDGAR", False, 0, "ดึงข้อมูลไม่ได้")
@@ -427,10 +433,15 @@ def stocktwits(sym: str):
 
 
 def alphavantage(sym: str):
-    from .util import env_list  # noqa
     import os
 
-    key = os.environ.get("ALPHAVANTAGE_KEY", "").strip() or "demo"
+    key = os.environ.get("ALPHAVANTAGE_KEY", "").strip()
+    if not key:
+        # No key means the request can only ever fail; skip it so the scan does
+        # not spend a network round-trip proving that on every single ticker.
+        _mark_fetch("Alpha Vantage", None, 0, "ยังไม่ได้ตั้งค่า ALPHAVANTAGE_KEY (ไม่บังคับ)")
+        _mark_src("Alpha Vantage", None, 0, "ยังไม่ได้ตั้งค่า ALPHAVANTAGE_KEY")
+        return None
 
     def load():
         url = (f"https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers={sym}"
