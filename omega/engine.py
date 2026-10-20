@@ -871,6 +871,66 @@ def analyze(sym: str) -> dict | None:
     return base
 
 
+# Fields the dashboard's list view actually renders (see index.html).  Anything
+# not here is only needed by the detail panel, which fetches /api/analyze/<sym>
+# fresh and therefore gets the full, uncompacted result.
+#
+# This matters for memory, not tidiness: a full analyze() result is ~120 KB
+# because every strike carries its "why"/"risks" prose and every ticker carries
+# up to 12 news items with sources, checks and filings.  Holding all 15 of them
+# in STATE cost ~3.2 MB of live JSON, and on a 512 MB free instance that was
+# enough to get the worker killed mid-scan.
+_STRIKE_KEEP = (
+    "ticker", "kind", "strike", "dist_pct", "premium", "premium_pct", "bid", "ask",
+    "volume", "oi", "spread_pct", "cheap", "liquid", "delta", "theta_bleed",
+    "liquidity", "omega", "verdict", "reliability", "hist_edge", "hist_n",
+    "hist_win", "expiry", "dte", "pop", "pop_lo", "pop_hi", "ev", "ev_pct",
+    "breakeven", "iv", "iv_vs_atm", "iv_tag", "headline", "p_itm", "p_touch",
+)
+_TICKER_KEEP = (
+    "ticker", "name", "spot", "spot_source", "chain_ts", "signal", "bias",
+    "tech_score", "flow_score", "news_score", "news", "atm_iv", "iv30",
+    "iv_rank", "iv_pct", "vrp", "sigma_hist", "sigma_model", "earnings",
+    "expected_move", "em_low", "em_high", "expiry", "dte", "n_days",
+    "reliability", "omega", "verdict", "error", "hist", "regime", "tech",
+    "flow", "iv30", "move_stats",
+)
+
+
+def _slim_strike(s: dict | None) -> dict | None:
+    if not s:
+        return None
+    return {k: s[k] for k in _STRIKE_KEEP if k in s}
+
+
+def compact_for_scan(r: dict) -> dict:
+    """Reduce a full analyze() result to what the list view shows.
+
+    Keeps the per-ticker summary, the winning CALL/PUT and the short candidate
+    list; drops the prose, the raw strike table and the news bodies that the
+    detail panel reloads on demand.
+    """
+    out = {k: r[k] for k in _TICKER_KEEP if k in r}
+    out["best"] = _slim_strike(r.get("best"))
+    out["alternate"] = _slim_strike(r.get("alternate"))
+    out["top_call"] = _slim_strike(r.get("top_call"))
+    out["top_put"] = _slim_strike(r.get("top_put"))
+    out["best_call"] = _slim_strike(r.get("best_call"))
+    out["best_put"] = _slim_strike(r.get("best_put"))
+    out["calls"] = []
+    out["puts"] = []
+    # The screener needs the same strike fields as the table rows.
+    out["candidates"] = [_slim_strike(c) for c in (r.get("candidates") or [])[:4]]
+    # Counts the list view displays, without the underlying bodies.
+    nd = r.get("news_detail") or {}
+    out["news_detail"] = dict(n=nd.get("n", 0), engine=nd.get("engine"),
+                              sources={}, checks=[], items=[], filings=[],
+                              social=nd.get("social", {}), note=nd.get("note", ""))
+    out["guide"] = (r.get("guide") or [])[:3]
+    out["answer"] = (r.get("answer") or [])[:2]
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # scan state
 # --------------------------------------------------------------------------- #
@@ -930,8 +990,9 @@ def _scan_once_locked() -> None:
             if err:
                 errs.append(err)
             if r:
-                items.append(r)
-                for cd in (r.get("candidates") or [])[:4]:
+                slim = compact_for_scan(r)
+                items.append(slim)
+                for cd in (slim.get("candidates") or [])[:4]:
                     cd = dict(cd)
                     cd.pop("why", None)
                     cd.pop("risks", None)
