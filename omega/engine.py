@@ -871,9 +871,24 @@ def analyze(sym: str) -> dict | None:
 STATE = dict(items=[], screener=[], updated=None, cycle_sec=0, errors=[], started=None,
              progress=dict(done=0, total=0, current=""), universe=list(WATCHLIST), version="2.0")
 _STATE_LOCK = threading.Lock()
+# Held for the duration of one full scan. The background loop and any manual
+# scan both take it, so two passes can never run at the same time and corrupt
+# the progress counter (or double the memory pressure on a free instance).
+scan_lock = threading.Lock()
 
 
 def scan_once() -> None:
+    # One scan at a time, whoever asks for it (background loop or /api/scan/now).
+    if not scan_lock.acquire(blocking=False):
+        log.info("scan_once skipped: another scan is already running")
+        return
+    try:
+        _scan_once_locked()
+    finally:
+        scan_lock.release()
+
+
+def _scan_once_locked() -> None:
     t0 = time.time()
     items, errs, cands = [], [], []
     total = len(WATCHLIST)

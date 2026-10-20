@@ -148,6 +148,7 @@ def _boot():
 # --------------------------------------------------------------------------- #
 @app.route("/")
 def index():
+    _boot()          # make sure the workers exist before the first page view
     src = _template_source()
     if isinstance(src, tuple):
         return src
@@ -168,6 +169,31 @@ def api_scan():
     return jsonify(payload)
 
 
+@app.route("/api/scan/now")
+def api_scan_now():
+    """Run one scan in the background right now, ignoring the refresh timer.
+
+    Useful when the dashboard is empty and you would rather not wait up to a
+    whole refresh window (or a cold start) to find out whether the data
+    sources answer from this host.  Overlapping scans are refused: two passes
+    at once only waste memory and make the progress counter meaningless.
+    """
+    def run():
+        try:
+            engine.scan_once()   # takes scan_lock itself; no-op if one is running
+            log.info("manual scan finished (%d items)", len(STATE.get("items") or []))
+        except BaseException as ex:
+            log.exception("manual scan failed: %s", ex)
+
+    if engine.scan_lock.locked():
+        return jsonify(started=False, reason="สแกนรอบก่อนยังไม่เสร็จ",
+                       progress=dict(STATE.get("progress") or {}),
+                       items=len(STATE.get("items") or []), time=now_iso())
+    threading.Thread(target=run, daemon=True, name="omega-manual-scan").start()
+    return jsonify(started=True, progress=dict(STATE.get("progress") or {}),
+                   items=len(STATE.get("items") or []), time=now_iso())
+
+
 @app.route("/api/boot")
 def api_boot():
     """Show whether the background workers are alive, and start them if not.
@@ -184,6 +210,13 @@ def api_boot():
         with _BOOT:
             _BOOTED = False       # force _boot() past its one-shot guard
         _boot()
+    # If nothing has ever been scanned, do not make the first visitor wait for
+    # the thread's own schedule -- start a pass immediately.
+    prog = STATE.get("progress") or {}
+    if not STATE.get("items") and not prog.get("done") and not prog.get("total"):
+        if not any(t.name == "omega-manual-scan" for t in threading.enumerate()):
+            threading.Thread(target=engine.scan_once, daemon=True,
+                             name="omega-manual-scan").start()
     threads = [t.name for t in threading.enumerate()]
     return jsonify(booted=_BOOTED, threads=threads,
                    scan_alive=any(t.name == "omega-scan" for t in threading.enumerate()),
