@@ -95,11 +95,16 @@ def _scan_loop():
 
 
 def _watchdog():
-    """Restart a background worker if it ever stops.
+    """Restart a background worker if it ever stops, or unstick a wedged scan.
 
     A scanner that dies silently leaves the dashboard empty with no clue why,
     which is exactly the failure this project kept hitting; the watchdog makes
     that state self-healing instead of requiring a redeploy.
+
+    The second failure mode is subtler: the thread is alive but the scan is
+    wedged on a provider that never answers, so the lock stays held and no new
+    pass can ever start.  Detecting that by *progress* rather than by thread
+    existence is what turns a permanently blank page into a self-healing one.
     """
     while True:
         time.sleep(60)
@@ -109,6 +114,17 @@ def _watchdog():
                 if name not in names:
                     log.warning("watchdog: %s is gone -- restarting", name)
                     threading.Thread(target=fn, daemon=True, name=name).start()
+
+            if engine.scan_stalled(150.0):
+                log.warning("watchdog: scan made no progress for 150s -- "
+                            "releasing the lock so a fresh pass can start")
+                try:
+                    engine.scan_lock.release()
+                except Exception:
+                    pass
+                # A wedged worker can never recover its own slot; give the new
+                # pass a clean semaphore so it is not blocked behind ghosts.
+                engine._ANALYZE_SLOTS = threading.Semaphore(engine.ANALYZE_SLOTS)
         except BaseException as ex:
             log.info("watchdog: %s", ex)
 
@@ -223,6 +239,10 @@ def api_boot():
                    scan_alive=any(t.name == "omega-scan" for t in threading.enumerate()),
                    progress=dict(STATE.get("progress") or {}),
                    items=len(STATE.get("items") or []),
+                   scan_locked=engine.scan_lock.locked(),
+                   scan_stalled=engine.scan_stalled(150.0),
+                   heartbeat_age=round(time.time() - (engine._HEARTBEAT.get("t") or 0), 1)
+                   if engine._HEARTBEAT.get("t") else None,
                    time=now_iso())
 
 

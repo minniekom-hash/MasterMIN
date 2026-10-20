@@ -959,6 +959,22 @@ scan_lock = threading.Lock()
 # Bounds concurrent analyze() calls from every caller: the scan workers, the
 # on-demand detail view and the diagnostics probe all funnel through this.
 _ANALYZE_SLOTS = threading.Semaphore(ANALYZE_SLOTS)
+# Timestamp of the last ticker to complete in the running scan.  The scan is
+# network-bound and each fetch already has a deadline, so this should always
+# move; when it stops moving the pass is wedged (a provider that answers nothing
+# and never closes the socket) and the scan lock would otherwise stay held
+# forever, leaving the dashboard empty until the next deploy.
+_HEARTBEAT = {"t": 0.0, "done": 0}
+
+
+def scan_stalled(idle_sec: float = 150.0) -> bool:
+    """True when a scan is running but has made no progress for a long time."""
+    if not scan_lock.locked():
+        return False
+    last = _HEARTBEAT.get("t") or 0.0
+    if not last:
+        return False
+    return (time.time() - last) > idle_sec
 
 
 def scan_once() -> None:
@@ -976,6 +992,8 @@ def _scan_once_locked() -> None:
     t0 = time.time()
     items, errs, cands = [], [], []
     total = len(WATCHLIST)
+    _HEARTBEAT["t"] = time.time()
+    _HEARTBEAT["done"] = 0
     with _STATE_LOCK:
         STATE["progress"] = dict(done=0, total=total, current="")
         STATE["universe"] = list(WATCHLIST)
@@ -1009,6 +1027,8 @@ def _scan_once_locked() -> None:
         # empty page for minutes looks broken even though work is happening.
         for fut in as_completed(futs):
             sym, r, err = fut.result()
+            _HEARTBEAT["t"] = time.time()
+            _HEARTBEAT["done"] = _HEARTBEAT.get("done", 0) + 1
             with _STATE_LOCK:
                 STATE["progress"]["done"] += 1
                 STATE["progress"]["current"] = sym

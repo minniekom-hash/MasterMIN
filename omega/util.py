@@ -224,7 +224,12 @@ breaker = Breaker()
 class Http:
     """Tiny requests wrapper: retries, per-host stats, breaker, connection cap."""
 
-    def __init__(self, max_concurrency: int = 10) -> None:
+    def __init__(self, max_concurrency: int = 24) -> None:
+        # The cap must sit comfortably above the number of threads that can ask
+        # for a slot at once (scan workers x per-ticker pool + news pools +
+        # diagnostics), otherwise the gate itself becomes the bottleneck.  24 is
+        # generous but still far below anything that would exhaust sockets, and
+        # the timed acquire below means even a mis-set value cannot deadlock.
         self._local = threading.local()
         self._sem = threading.BoundedSemaphore(max_concurrency)
         self.stats: dict = {}
@@ -268,7 +273,16 @@ class Http:
             hdrs.update(headers)
         t0 = time.time()
         got = None
-        self._sem.acquire()
+        # Never block forever on the concurrency gate.  The scan runs several
+        # pools at once (per-ticker fetch, news, per-strike), so the number of
+        # threads wanting a slot can exceed the cap; an unbounded acquire() then
+        # deadlocks, every worker parks here and the scan sits at 0/15 forever.
+        # If no slot frees up in time the request is simply treated as failed,
+        # which the circuit breaker and the fallbacks already handle.
+        if not self._sem.acquire(timeout=20):
+            log.info("HTTP busy, dropping %s", url[:110])
+            self._bump(host, False, int((time.time() - t0) * 1000))
+            return None
         try:
             r = self._session().get(url, headers=hdrs, timeout=timeout)
             if r.status_code in allow_status:

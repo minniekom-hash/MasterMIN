@@ -94,7 +94,7 @@ def _stockanalysis_hist(sym: str):
     """stockanalysis.com unofficial JSON: [{t,o,h,l,c,v}, ...] newest first."""
     j = http.json(f"https://stockanalysis.com/api/symbol/s/{sym.lower()}/history?range=2Y&period=Day",
                   headers={"Accept": "application/json", "Referer": f"https://stockanalysis.com/stocks/{sym.lower()}/history/"},
-                  timeout=(5, 18))
+                  timeout=(4, 12))
     if not isinstance(j, dict) or not isinstance(j.get("data"), list):
         _mark("StockAnalysis History", False, "รูปแบบข้อมูลไม่ตรง")
         return None
@@ -116,7 +116,7 @@ def _stockanalysis_hist(sym: str):
 
 def _cboe_hist(sym: str):
     """CBOE publishes full daily history on the same CDN as the option chain."""
-    j = http.json(f"{CBOE}/charts/historical/{sym}.json", timeout=(6, 25))
+    j = http.json(f"{CBOE}/charts/historical/{sym}.json", timeout=(4, 10))
     if not j or not isinstance(j.get("data"), list):
         _mark("CBOE History", False)
         return None
@@ -227,7 +227,7 @@ def _cboe_intraday(sym: str):
     This is the closest thing to a real option tape that is available without a
     paid feed, so it powers the intraday part of the order-flow model.
     """
-    j = http.json(f"{CBOE}/charts/intraday/{sym}.json", timeout=(6, 20))
+    j = http.json(f"{CBOE}/charts/intraday/{sym}.json", timeout=(4, 10))
     if not j or not isinstance(j.get("data"), list):
         _mark("CBOE Intraday", False)
         return None
@@ -332,7 +332,7 @@ def chain(sym: str, ttl: int = 120):
     """Full delayed option chain with provider Greeks. Returns dict or None."""
 
     def load():
-        j = http.json(f"{CBOE}/options/{sym}.json", timeout=(6, 25))
+        j = http.json(f"{CBOE}/options/{sym}.json", timeout=(4, 10))
         if not j or not j.get("data"):
             _mark("CBOE Chain", False)
             return None
