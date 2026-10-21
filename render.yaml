@@ -47,6 +47,11 @@ services:
       # fast connection and in tens of seconds from here.
       - key: ANALYZE_TIMEOUT
         value: "90"
+      # How long a pass may go without publishing anything before the
+      # supervisor notices.  Set well above the slowest healthy pass: fifteen
+      # tickers, two at a time, each with its own ceiling.
+      - key: STALL_SEC
+        value: "1800"
       - key: INLINE_WAIT_SEC
         value: "20"
       # Each real expiry date in the chain gets its own answer.  Four covers the

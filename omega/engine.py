@@ -110,6 +110,11 @@ MEMORY_CEILING_MB = env_float("MEMORY_CEILING_MB", 260.0)
 def _rss_mb() -> float:
     """The resident size of this process, in megabytes (0 when unknown)."""
     try:
+        import psutil
+        return psutil.Process().memory_info().rss / (1024 * 1024)
+    except Exception:
+        pass
+    try:
         with open("/proc/self/statm", "r") as f:
             pages = int(f.read().split()[1])
         return pages * (os.sysconf("SC_PAGE_SIZE") / (1024 * 1024))

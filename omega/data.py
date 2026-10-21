@@ -456,9 +456,9 @@ def chain(sym: str, ttl: int = 240):
             p = _parse_osym(str(o.get("option") or ""))
             if p:
                 exps.add(p[0])
-        keep_exps = set(sorted(exps)[:8])
-        lo = spot * 0.45 if spot > 0 else None
-        hi = spot * 1.55 if spot > 0 else None
+        keep_exps = set(sorted(exps)[:6])
+        lo = spot * 0.40 if spot > 0 else None
+        hi = spot * 1.60 if spot > 0 else None
         rows = []
         for o in opts:
             p = _parse_osym(str(o.get("option") or ""))

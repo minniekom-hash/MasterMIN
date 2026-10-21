@@ -801,11 +801,10 @@ def for_ticker(sym: str, name: str = "") -> dict:
 
         # The bodies have done their work: the sentiment above is what they
         # were for.  Keeping every headline of every ticker at full length is
-        # what filled the memory, so what is kept is a short excerpt.
+        # what filled the memory, so the body is dropped entirely from what is
+        # cached -- only the title and the sentiment it produced are kept.
         for it in dedup:
-            b = it.get("body") or ""
-            if len(b) > 900:
-                it["body"] = b[:900]
+            it["body"] = ""
 
         checks = fact_check(dedup)
         depth = {"full": 0, "summary": 0, "headline": 0}
