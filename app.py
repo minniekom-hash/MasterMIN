@@ -61,6 +61,20 @@ def _template_source():
 _BOOT = threading.Lock()
 _BOOTED = False
 
+# How long a cold /api/scan will wait for its own pass to produce something
+# before answering with what it has.  Kept well under the server's request
+# timeout: the scan publishes each ticker as it lands, so a couple of seconds is
+# usually enough for the first rows and the rest arrive on the next poll.
+INLINE_WAIT_SEC = float(os.environ.get("INLINE_WAIT_SEC", "20"))
+
+
+def _inline_scan():
+    """One scan on behalf of a request that found the dashboard empty."""
+    try:
+        engine.scan_now_blocking()
+    except BaseException as ex:
+        log.warning("inline scan failed: %s", ex)
+
 
 def _scan_loop():
     log.info("scan loop starting (refresh=%ss, watchlist=%d)", REFRESH_SEC, len(engine.WATCHLIST))
@@ -198,11 +212,15 @@ def health():
 
 @app.route("/api/scan")
 def api_scan():
-    # Never serve an empty dashboard while the answer is available: if nothing
-    # has been scanned yet, run a pass here rather than trusting a background
-    # thread that may have wedged.  A wedged pass (lock held, no progress) is
-    # taken over first, because otherwise the visitor waits behind work that is
-    # never going to finish.
+    # Never serve an empty dashboard while the answer is available.  A free
+    # instance can wedge a background pass, and a visitor who arrives then would
+    # otherwise stare at nothing until the watchdog noticed.
+    #
+    # The pass runs on a background thread and this request waits only a short,
+    # bounded time for the first results, because the scan publishes each ticker
+    # as it lands and a cold request must not sit anywhere near the server's
+    # request timeout.  Whatever has arrived is returned; the pass carries on and
+    # the next poll picks up the rest.
     if not (STATE.get("items") or []):
         if engine.scan_stalled(90.0):
             log.warning("api/scan: taking over a wedged scan")
@@ -212,10 +230,14 @@ def api_scan():
                 pass
             engine._ANALYZE_SLOTS = threading.Semaphore(engine.ANALYZE_SLOTS)
         if not engine.scan_lock.locked():
-            try:
-                engine.scan_now_blocking()
-            except BaseException as ex:
-                log.warning("inline scan failed: %s", ex)
+            threading.Thread(target=_inline_scan, daemon=True, name="omega-inline-scan").start()
+            deadline = time.time() + INLINE_WAIT_SEC
+            while time.time() < deadline:
+                if STATE.get("items"):
+                    break
+                if not engine.scan_lock.locked():
+                    break
+                time.sleep(1.0)
     with engine._STATE_LOCK:
         payload = clean(dict(STATE))
     payload["cache"] = cache.stats()

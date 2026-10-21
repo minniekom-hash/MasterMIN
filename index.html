@@ -678,6 +678,10 @@ if(!detail.showModal) detail.showModal = function(){ this.setAttribute('open',''
 refreshAll(true);
 setInterval(()=>{ cd--; clock(); if(cdleft()<=0){ cd=CD; refreshAll(false);} },1000);
 setInterval(()=>{ if(Date.now()-srcAt>300000) loadSources(); }, 60000);
+// While the dashboard is still empty, poll quickly instead of waiting out the
+// whole refresh countdown: the pass publishes each ticker as it lands, so rows
+// appear one after another rather than all at the end of a long wait.
+setInterval(()=>{ if(!scan || !(scan.items||[]).length) refreshAll(false); }, 5000);
 </script>
 </body>
 </html>
