@@ -25,7 +25,7 @@ from flask import (Flask, jsonify, redirect, render_template_string, request,
 from omega import data, engine, news, track
 from omega.data import chain, daily, provider_status, yahoo_price
 from omega.engine import REFRESH_SEC, STATE
-from omega.util import VERSION, cache, clean, http, now_iso
+from omega.util import VERSION, cache, clean, http, io_pool_stats, now_iso
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(name)s %(message)s")
 log = logging.getLogger("omega.app")
@@ -646,7 +646,8 @@ def api_diag():
     probe("Alpha Vantage news", lambda: news.alphavantage("AAPL"))
     return jsonify(clean(dict(version=VERSION, now=now_iso(), checks=checks,
                               providers=provider_status(), fetchers=news.FETCH,
-                              memory=_memory_report(),
+                              memory=_memory_report(), io=io_pool_stats(),
+                              threads=len(threading.enumerate()),
                               watchlist=engine.WATCHLIST, circuit=__import__("omega.util", fromlist=["breaker"]).breaker.state(),
                               config=dict(sims=engine.SIMS, refresh_sec=REFRESH_SEC,
                                           scan_workers=engine.SCAN_WORKERS,

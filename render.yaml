@@ -38,6 +38,11 @@ services:
         value: "3"
       - key: ANALYZE_SLOTS
         value: "3"
+      # One pool for every network fan-out in the process, with its threads
+      # created at boot.  Starting a thread while a pass is running is what
+      # used to stall the scan on this instance.
+      - key: IO_WORKERS
+        value: "32"
       - key: INLINE_WAIT_SEC
         value: "20"
       # Each real expiry date in the chain gets its own answer.  Four covers the

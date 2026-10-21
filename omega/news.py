@@ -26,7 +26,7 @@ from urllib.parse import urlparse
 
 import numpy as np
 
-from .util import SEC_UA, age_hours, cache, http, log, now_iso
+from .util import SEC_UA, age_hours, cache, http, io_pool, log, now_iso
 
 # --------------------------------------------------------------------------- #
 # sentiment engine (VADER when nltk is present, else a built-in finance lexicon)
@@ -290,31 +290,29 @@ def fetch_feed(url: str, sec: bool = False, limit: int = 60):
 def general_items():
     def load():
         out = []
-        # Small pool on purpose: this runs *inside* the scan workers, so a wide
-        # pool here multiplies with SCAN_WORKERS into dozens of live threads on
-        # a 512MB free instance.  The HTTP layer already allows 10 concurrent
-        # requests, so a modest thread count still saturates the network.
-        with ThreadPoolExecutor(max_workers=4) as ex:
-            futs = {ex.submit(fetch_feed, url): (name, url) for name, url in GENERAL_FEEDS}
-            # One deadline for the whole group, not one per feed: waiting on the
-            # feeds in turn meant a slow feed was charged its full timeout
-            # again for every feed behind it.
-            done, _ = wait(list(futs.keys()), timeout=12.0)
-            for f in done:
-                name, url = futs[f]
-                try:
-                    items = f.result(timeout=0.5)
-                except Exception:
-                    items = None
-                if items is None:
-                    _mark_src(name, False, 0, "ดึงฟีดไม่ได้")
-                    continue
-                _mark_src(name, True, len(items))
-                for it in items:
-                    it["s"] = name
-                    it["k"] = "publisher"
-                    it["age"] = age_hours(it.get("ts"))
-                    out.append(it)
+        # The shared pool: one pool for the whole process, so a pass over
+        # fifteen tickers does not create and destroy dozens of threads.
+        ex = io_pool()
+        futs = {ex.submit(fetch_feed, url): (name, url) for name, url in GENERAL_FEEDS}
+        # One deadline for the whole group, not one per feed: waiting on the
+        # feeds in turn meant a slow feed was charged its full timeout
+        # again for every feed behind it.
+        done, _ = wait(list(futs.keys()), timeout=12.0)
+        for f in done:
+            name, url = futs[f]
+            try:
+                items = f.result(timeout=0.5)
+            except Exception:
+                items = None
+            if items is None:
+                _mark_src(name, False, 0, "ดึงฟีดไม่ได้")
+                continue
+            _mark_src(name, True, len(items))
+            for it in items:
+                it["s"] = name
+                it["k"] = "publisher"
+                it["age"] = age_hours(it.get("ts"))
+                out.append(it)
         _mark_fetch("Publisher RSS", True, len(out))
         return out
 
@@ -421,32 +419,32 @@ def _attribute(it: dict, feed: str) -> str:
 
 def ticker_feeds(sym: str):
     out = []
-    with ThreadPoolExecutor(max_workers=4) as ex:
-        # 40 per feed is plenty of headlines and keeps the de-dup/sentiment
-        # pass cheap; a busy query can return a hundred near-duplicates.
-        futs = {ex.submit(fetch_feed, tpl.format(sym=sym), limit=40): name
-                for name, tpl in TICKER_FEEDS}
-        # One deadline for the whole group.  A feed that accepts the connection
-        # and then never answers would otherwise park this worker for good; the
-        # scan would sit at "no progress" and the dashboard would stay empty.
-        done, _ = wait(list(futs.keys()), timeout=12.0)
-        for f in done:
-            name = futs[f]
-            try:
-                items = f.result(timeout=0.5)
-            except Exception:
-                items = None
-            if items is None:
-                _mark_src(name, False, 0, "ดึงฟีดรายหุ้นไม่ได้")
-                continue
-            _mark_src(name, True, len(items))
-            for it in items:
-                outlet = _attribute(it, name)
-                title = it.get("t") or ""
-                # Drop the trailing " - Publisher" once the publisher is its own
-                # field, otherwise every aggregated headline reads doubled.
-                if name in _AGGREGATORS and outlet != name and title.endswith(" - " + outlet):
-                    title = title[: -len(" - " + outlet)].strip()
+    ex = io_pool()
+    # 40 per feed is plenty of headlines and keeps the de-dup/sentiment
+    # pass cheap; a busy query can return a hundred near-duplicates.
+    futs = {ex.submit(fetch_feed, tpl.format(sym=sym), limit=40): name
+            for name, tpl in TICKER_FEEDS}
+    # One deadline for the whole group.  A feed that accepts the connection
+    # and then never answers would otherwise park this worker for good; the
+    # scan would sit at "no progress" and the dashboard would stay empty.
+    done, _ = wait(list(futs.keys()), timeout=12.0)
+    for f in done:
+        name = futs[f]
+        try:
+            items = f.result(timeout=0.5)
+        except Exception:
+            items = None
+        if items is None:
+            _mark_src(name, False, 0, "ดึงฟีดรายหุ้นไม่ได้")
+            continue
+        _mark_src(name, True, len(items))
+        for it in items:
+            outlet = _attribute(it, name)
+            title = it.get("t") or ""
+            # Drop the trailing " - Publisher" once the publisher is its own
+            # field, otherwise every aggregated headline reads doubled.
+            if name in _AGGREGATORS and outlet != name and title.endswith(" - " + outlet):
+                title = title[: -len(" - " + outlet)].strip()
                 it["t"] = title
                 it.update(s=outlet, via=name, k="ticker", age=age_hours(it.get("ts")))
                 out.append(it)
@@ -760,16 +758,16 @@ def for_ticker(sym: str, name: str = "") -> dict:
             return d, txt, why
 
         if head:
-            with ThreadPoolExecutor(max_workers=min(4, len(head))) as ex:
-                futs = {ex.submit(_read, it): it for it in head}
-                done, _ = wait(list(futs.keys()), timeout=12.0)
-                for f in done:
-                    it = futs[f]
-                    try:
-                        d, txt, why = f.result(timeout=0.5)
-                    except Exception:
-                        d, txt, why = "none", "", "หมดเวลาอ่านบทความ"
-                    it.update(depth=d, body=txt, why=why)
+            ex = io_pool()
+            futs = {ex.submit(_read, it): it for it in head}
+            done, _ = wait(list(futs.keys()), timeout=12.0)
+            for f in done:
+                it = futs[f]
+                try:
+                    d, txt, why = f.result(timeout=0.5)
+                except Exception:
+                    d, txt, why = "none", "", "หมดเวลาอ่านบทความ"
+                it.update(depth=d, body=txt, why=why)
         for it in dedup:
             it.setdefault("depth", "summary" if it.get("snip") else "headline")
             it.setdefault("body", it.get("snip", ""))
@@ -855,18 +853,18 @@ def for_ticker(sym: str, name: str = "") -> dict:
 def probe_all() -> dict:
     """Health-check every publisher feed (background loop + /api/sources)."""
     fs = []
-    with ThreadPoolExecutor(max_workers=4) as ex:
-        for name, url in GENERAL_FEEDS:
-            fs.append((name, ex.submit(fetch_feed, url, False, 5)))
-        for name, url in fs:
-            try:
-                items = url.result()
-            except Exception:
-                items = None
-            if items is None:
-                _mark_src(name, False, 0, "ดึงฟีดไม่ได้/ถูกบล็อกจาก IP เซิร์ฟเวอร์")
-            else:
-                _mark_src(name, True, len(items))
+    ex = io_pool()
+    for name, url in GENERAL_FEEDS:
+        fs.append((name, ex.submit(fetch_feed, url, False, 5)))
+    for name, url in fs:
+        try:
+            items = url.result()
+        except Exception:
+            items = None
+        if items is None:
+            _mark_src(name, False, 0, "ดึงฟีดไม่ได้/ถูกบล็อกจาก IP เซิร์ฟเวอร์")
+        else:
+            _mark_src(name, True, len(items))
     for name, url in TICKER_FEEDS:
         items = fetch_feed(url.format(sym="SPY"), False, 5)
         _mark_src(name, items is not None, len(items or []),

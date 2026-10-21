@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 import pandas as pd
 
-from .util import SEC_UA, breaker, cache, http, log, now_iso
+from .util import SEC_UA, breaker, cache, http, io_pool, log, now_iso
 
 YF = "https://query{n}.finance.yahoo.com"
 CBOE = "https://cdn.cboe.com/api/global/delayed_quotes"
@@ -240,22 +240,22 @@ def daily(sym: str, ttl: int = 600) -> pd.DataFrame:
         # time and the first usable answer wins.  Tried one after another, a
         # blocked Yahoo cost ~30s of waiting before the ticker had any history
         # at all -- which on a shared instance was most of a scan cycle.
-        from concurrent.futures import ThreadPoolExecutor, wait
+        from concurrent.futures import wait
 
         alts = {}
-        with ThreadPoolExecutor(max_workers=3) as ex:
-            futs = {ex.submit(fn): name for name, fn in (
-                ("StockAnalysis", lambda: _stockanalysis_hist(sym)),
-                ("CBOE History", lambda: _cboe_hist(sym)),
-                ("Nasdaq History", lambda: _nasdaq_hist(sym)))}
-            done, _ = wait(list(futs.keys()), timeout=12.0)
-            for f in done:
-                name = futs[f]
-                try:
-                    alts[name] = f.result(timeout=0.5)
-                except Exception as err:
-                    log.info("daily %s via %s: %s", sym, name, err)
-                    alts[name] = None
+        ex = io_pool()
+        futs = {ex.submit(fn): name for name, fn in (
+            ("StockAnalysis", lambda: _stockanalysis_hist(sym)),
+            ("CBOE History", lambda: _cboe_hist(sym)),
+            ("Nasdaq History", lambda: _nasdaq_hist(sym)))}
+        done, _ = wait(list(futs.keys()), timeout=12.0)
+        for f in done:
+            name = futs[f]
+            try:
+                alts[name] = f.result(timeout=0.5)
+            except Exception as err:
+                log.info("daily %s via %s: %s", sym, name, err)
+                alts[name] = None
         for name, alt in alts.items():
             if alt is None or len(alt) < 60:
                 continue

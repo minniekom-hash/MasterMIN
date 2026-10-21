@@ -15,6 +15,7 @@ import random
 import socket
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 import numpy as np
@@ -323,7 +324,11 @@ def _dns_start() -> None:
             return
         _DNS_STARTED = True
     for i in range(DNS_WORKERS):
-        threading.Thread(target=_dns_worker, daemon=True, name="omega-dns%d" % i).start()
+        try:
+            threading.Thread(target=_dns_worker, daemon=True, name="omega-dns%d" % i).start()
+        except Exception as ex:
+            # A thread that cannot be started must not take the rest down.
+            log.warning("could not start resolver thread %d: %s", i, ex)
 
 
 def _getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
@@ -356,6 +361,66 @@ def _getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
 
 
 socket.getaddrinfo = _getaddrinfo
+
+
+# --------------------------------------------------------------------------- #
+# one pool for every network fan-out in the process
+# --------------------------------------------------------------------------- #
+# Every ticker used to build its own pools: one for the price fetches, three
+# inside the news layer.  A pass over fifteen tickers therefore created and
+# destroyed dozens of threads, and on a one-CPU instance the cost of starting
+# and stopping them was larger than the work they did -- worse, starting a
+# thread there can block, which is how a scan stops making progress with no
+# CPU being used at all.
+#
+# So there is now a single pool, and its threads are created once, at boot,
+# where nothing else is running.
+IO_WORKERS = int(os.environ.get("IO_WORKERS", "32") or 32)
+_io_pool = None
+_io_lock = threading.Lock()
+
+
+def io_pool():
+    """The shared network pool.  Never None, never rebuilt in a request."""
+    global _io_pool
+    with _io_lock:
+        if _io_pool is None:
+            _io_pool = ThreadPoolExecutor(max_workers=IO_WORKERS,
+                                          thread_name_prefix="omega-io")
+            # Force the threads into existence now, one at a time, while the
+            # process is still quiet.
+            for _i in range(IO_WORKERS):
+                _io_pool.submit(lambda: None)
+        return _io_pool
+
+
+def io_pool_stats() -> dict:
+    return dict(workers=IO_WORKERS,
+                dns_queue=_DNS_QUEUE.qsize(),
+                dns_workers=[t.name for t in threading.enumerate() if t.name.startswith("omega-dns")],
+                pending=len(_DNS_INFLIGHT),
+                cached=len(_DNS_CACHE))
+
+
+def _boot_threads() -> None:
+    """Create the resolver and network threads while the process is quiet.
+
+    Doing this at import time means no request ever has to start a thread --
+    and starting a thread on a busy one-CPU instance can block for a long
+    time, which is how a pass would stop making progress with nothing
+    running.
+    """
+    try:
+        _dns_start()
+    except Exception as ex:
+        log.warning("resolver threads: %s", ex)
+    try:
+        io_pool()
+    except Exception as ex:
+        log.warning("network pool: %s", ex)
+
+
+_boot_threads()
 
 
 class Http:

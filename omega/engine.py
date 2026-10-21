@@ -24,14 +24,15 @@ import os
 import re
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import pandas as pd
 
 from . import data, news, quant, sim
-from .util import (cache, clean, clip, env_float, env_int, env_list, http, log,
-                   now_iso, nz, release_memory)
+from .util import (cache, clean, clip, env_float, env_int, env_list, http, io_pool,
+                   log, now_iso, nz, release_memory)
 
 # --------------------------------------------------------------------------- #
 # configuration
@@ -419,19 +420,19 @@ def earnings_map(days: int = MAX_DTE + 7) -> dict:
         # or refused us could hold a single ticker for minutes -- it was the
         # largest single cost in a scan cycle.  The days are independent, so
         # they are asked together and the whole set gets one deadline.
-        from concurrent.futures import ThreadPoolExecutor, wait
+        from concurrent.futures import wait
 
-        with ThreadPoolExecutor(max_workers=8) as ex:
-            futs = {ex.submit(_earn_day, ds): ds for ds in dates}
-            done, _ = wait(list(futs.keys()), timeout=10.0)
-            for f in done:
-                ds = futs[f]
-                try:
-                    syms = f.result(timeout=0.5)
-                except Exception:
-                    syms = []
-                for sym in syms:
-                    out[sym] = ds
+        ex = io_pool()
+        futs = {ex.submit(_earn_day, ds): ds for ds in dates}
+        done, _ = wait(list(futs.keys()), timeout=10.0)
+        for f in done:
+            ds = futs[f]
+            try:
+                syms = f.result(timeout=0.5)
+            except Exception:
+                syms = []
+            for sym in syms:
+                out[sym] = ds
         return out or None
 
     try:
@@ -1070,22 +1071,18 @@ def analyze(sym: str) -> dict | None:
         # of the watchlist piles up behind it and the scan never finishes.
         # This bounds the damage: the slot is released, the ticker is reported
         # as failed, and the cycle carries on.
-        from concurrent.futures import ThreadPoolExecutor, TimeoutError as FTO
+        from concurrent.futures import TimeoutError as FTO
 
         _trace(sym, "queued")
-        pool = ThreadPoolExecutor(max_workers=1)
+        fut = _ANALYZE_POOL.submit(_analyze_inner, sym)
         try:
-            fut = pool.submit(_analyze_inner, sym)
-            try:
-                out = fut.result(timeout=ANALYZE_TIMEOUT)
-                _trace(sym, "done")
-                return out
-            except FTO:
-                log.warning("analyze %s: exceeded %ss -- abandoning it", sym, ANALYZE_TIMEOUT)
-                _trace(sym, "timeout")
-                return None
-        finally:
-            pool.shutdown(wait=False)
+            out = fut.result(timeout=ANALYZE_TIMEOUT)
+            _trace(sym, "done")
+            return out
+        except FTO:
+            log.warning("analyze %s: exceeded %ss -- abandoning it", sym, ANALYZE_TIMEOUT)
+            _trace(sym, "timeout")
+            return None
 
 
 def _analyze_inner(sym: str) -> dict | None:
@@ -1119,7 +1116,7 @@ def _analyze_inner(sym: str) -> dict | None:
         except Exception:
             return fallback
 
-    pool = ThreadPoolExecutor(max_workers=5)
+    pool = io_pool()
     _T = {}
     try:
         _t0 = time.time()
@@ -1148,9 +1145,9 @@ def _analyze_inner(sym: str) -> dict | None:
         _T["news"] = int((time.time() - _t0) * 1000) - _T["fetch"]
         _trace(sym, "signals")
     finally:
-        # do not block on stragglers: the scan must keep moving even if one
-        # worker thread is still stuck on a dead connection
-        pool.shutdown(wait=False)
+        # The pool is shared, so it is not shut down here: the stragglers are
+        # left to finish on their own, and the scan keeps moving either way.
+        pass
 
     if (d is None or d.empty) and not ch:
         return None
@@ -1787,12 +1784,7 @@ def position_check(sym: str, call_strike=None, put_strike=None,
     # legal thing to inside information, and it is checkable.
     ns = {}
     try:
-        from concurrent.futures import ThreadPoolExecutor as _TPE
-        _pool = _TPE(max_workers=1)
-        try:
-            ns = _pool.submit(news.for_ticker, sym, "").result(timeout=20.0) or {}
-        finally:
-            _pool.shutdown(wait=False)
+        ns = io_pool().submit(news.for_ticker, sym, "").result(timeout=20.0) or {}
     except Exception:
         ns = {}
 
@@ -2042,6 +2034,15 @@ scan_lock = threading.Lock()
 # Bounds concurrent analyze() calls from every caller: the scan workers, the
 # on-demand detail view and the diagnostics probe all funnel through this.
 _ANALYZE_SLOTS = threading.Semaphore(ANALYZE_SLOTS)
+# The analyses run on their own pool, never on the network pool: an analysis
+# waits for the fetches it submitted, so letting both share one pool could
+# deadlock it against itself.  The threads are created at import, while the
+# process is quiet -- starting a thread during a pass is what used to stall
+# the scan on a busy instance.
+_ANALYZE_POOL = ThreadPoolExecutor(max_workers=ANALYZE_SLOTS + 1,
+                                   thread_name_prefix="omega-analyze")
+for _i in range(ANALYZE_SLOTS + 1):
+    _ANALYZE_POOL.submit(lambda: None)
 # Timestamp of the last ticker to complete in the running scan.  The scan is
 # network-bound and each fetch already has a deadline, so this should always
 # move; when it stops moving the pass is wedged (a provider that answers nothing
