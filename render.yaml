@@ -5,7 +5,7 @@ services:
     plan: free
     region: singapore
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --workers 1 --threads 8 --timeout 300 --bind 0.0.0.0:$PORT
+    startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 300 --bind 0.0.0.0:$PORT
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
@@ -42,7 +42,7 @@ services:
       # created at boot.  Starting a thread while a pass is running is what
       # used to stall the scan on this instance.
       - key: IO_WORKERS
-        value: "32"
+        value: "16"
       - key: INLINE_WAIT_SEC
         value: "20"
       # Each real expiry date in the chain gets its own answer.  Four covers the

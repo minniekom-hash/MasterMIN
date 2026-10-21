@@ -295,10 +295,23 @@ _DNS_QUEUE: "queue.Queue" = queue.Queue(maxsize=64)
 # piled up until starting a new one blocked -- which is what stopped the scan
 # dead.  Now a lookup that hangs costs one resolver thread and nothing else:
 # the callers waiting on it give up and the fallbacks take over.
-DNS_WORKERS = 4
+DNS_WORKERS = 2
 DNS_TIMEOUT = 4.0
 DNS_TTL = 60.0
 _DNS_STARTED = False
+
+# Every thread the process could not start, with the reason.  On a platform
+# that limits how many threads a container may have, this is the difference
+# between "the resolver is down" and "the resolver was never started".
+THREAD_ERRORS: list = []
+
+
+def _safe_thread(target, name) -> None:
+    try:
+        threading.Thread(target=target, daemon=True, name=name).start()
+    except Exception as ex:
+        THREAD_ERRORS.append("%s: %s: %s" % (name, type(ex).__name__, str(ex)[:120]))
+        log.warning("could not start thread %s: %s", name, ex)
 
 
 def _dns_worker():
@@ -324,17 +337,29 @@ def _dns_start() -> None:
             return
         _DNS_STARTED = True
     for i in range(DNS_WORKERS):
-        try:
-            threading.Thread(target=_dns_worker, daemon=True, name="omega-dns%d" % i).start()
-        except Exception as ex:
-            # A thread that cannot be started must not take the rest down.
-            log.warning("could not start resolver thread %d: %s", i, ex)
+        _safe_thread(_dns_worker, "omega-dns%d" % i)
 
 
 def _getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
     """socket.getaddrinfo, with a cache, a deadline and a bounded worker pool."""
-    _dns_start()
     key = (host, port, family, type, proto, flags)
+    with _DNS_LOCK:
+        hit = _DNS_CACHE.get(key)
+        if hit and (time.time() - hit[0]) < DNS_TTL:
+            return hit[1]
+    # If no resolver thread is alive -- a container that refused them -- then
+    # queueing the lookup would be pointless.  Do it here instead: the caller
+    # has its own deadline, and a lookup that works is better than one that
+    # never even starts.
+    if not any(t.name.startswith("omega-dns") for t in threading.enumerate()):
+        try:
+            res = _REAL_GETADDRINFO(host, port, family, type, proto, flags)
+        except Exception:
+            raise
+        with _DNS_LOCK:
+            _DNS_CACHE[key] = (time.time(), res)
+        return res
+    _dns_start()
     with _DNS_LOCK:
         hit = _DNS_CACHE.get(key)
         if hit and (time.time() - hit[0]) < DNS_TTL:
@@ -375,31 +400,42 @@ socket.getaddrinfo = _getaddrinfo
 #
 # So there is now a single pool, and its threads are created once, at boot,
 # where nothing else is running.
-IO_WORKERS = int(os.environ.get("IO_WORKERS", "32") or 32)
+IO_WORKERS = int(os.environ.get("IO_WORKERS", "16") or 16)
 _io_pool = None
 _io_lock = threading.Lock()
+_io_live = 0
 
 
 def io_pool():
     """The shared network pool.  Never None, never rebuilt in a request."""
-    global _io_pool
+    global _io_pool, _io_live
     with _io_lock:
         if _io_pool is None:
             _io_pool = ThreadPoolExecutor(max_workers=IO_WORKERS,
                                           thread_name_prefix="omega-io")
             # Force the threads into existence now, one at a time, while the
-            # process is still quiet.
+            # process is still quiet -- and count how many actually started,
+            # because a container may refuse the rest.
+            live = 0
             for _i in range(IO_WORKERS):
-                _io_pool.submit(lambda: None)
+                try:
+                    _io_pool.submit(lambda: None)
+                    live += 1
+                except Exception as ex:
+                    THREAD_ERRORS.append("omega-io: %s: %s" % (type(ex).__name__, str(ex)[:120]))
+                    log.warning("network pool: %s", ex)
+                    break
+            _io_live = live
         return _io_pool
 
 
 def io_pool_stats() -> dict:
-    return dict(workers=IO_WORKERS,
+    return dict(workers=IO_WORKERS, live=_io_live,
                 dns_queue=_DNS_QUEUE.qsize(),
                 dns_workers=[t.name for t in threading.enumerate() if t.name.startswith("omega-dns")],
                 pending=len(_DNS_INFLIGHT),
-                cached=len(_DNS_CACHE))
+                cached=len(_DNS_CACHE),
+                thread_errors=THREAD_ERRORS[-8:])
 
 
 def _boot_threads() -> None:
