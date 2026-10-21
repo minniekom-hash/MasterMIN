@@ -2013,6 +2013,16 @@ _ANALYZE_SLOTS = threading.Semaphore(ANALYZE_SLOTS)
 # and never closes the socket) and the scan lock would otherwise stay held
 # forever, leaving the dashboard empty until the next deploy.
 _HEARTBEAT = {"t": 0.0, "done": 0}
+# Set by the supervisor when a pass has made no progress for a long time.  The
+# pass then gives up at the next ticker instead of being torn down from the
+# outside: pulling the lock out from under a running pass leaves the lock
+# released twice, and the running thread dies holding a semaphore nobody else
+# can release.
+_SCAN_STOP = threading.Event()
+
+
+def request_scan_stop() -> None:
+    _SCAN_STOP.set()
 
 
 def scan_stalled(idle_sec: float = 150.0) -> bool:
@@ -2030,11 +2040,25 @@ def scan_stalled(idle_sec: float = 150.0) -> bool:
     return (time.time() - last) > idle_sec
 
 
+def scan_running() -> bool:
+    """True when a thread that is supposed to be scanning actually is.
+
+    A lock can be held by a thread that has since died, and nothing then ever
+    releases it.  Knowing that the owner is gone is what lets the server take
+    the lock back instead of waiting for a pass that will never come.
+    """
+    if not scan_lock.locked():
+        return False
+    names = {t.name for t in threading.enumerate()}
+    return bool(names & {"omega-scan", "omega-inline-scan", "omega-manual-scan"})
+
+
 def scan_once() -> None:
     # One scan at a time, whoever asks for it (background loop or /api/scan/now).
     if not scan_lock.acquire(blocking=False):
         log.info("scan_once skipped: another scan is already running")
         return
+    _SCAN_STOP.clear()
     # Stamp the heartbeat the instant the pass owns the lock.  Setting it only
     # inside the body would leave a window where a pass is "running" (lock held)
     # with no heartbeat at all, which the watchdog would read as healthy.
@@ -2088,6 +2112,8 @@ def _scan_once_locked() -> None:
 
     def work(sym):
         s = sym.strip().upper()
+        if _SCAN_STOP.is_set():
+            return s, None, None
         try:
             r = analyze(s)
         except Exception as ex:
@@ -2112,6 +2138,9 @@ def _scan_once_locked() -> None:
         # slowest one.  On a free instance the full pass can take a while, and an
         # empty page for minutes looks broken even though work is happening.
         for fut in as_completed(futs):
+            if _SCAN_STOP.is_set():
+                log.warning("scan: asked to stop -- abandoning the rest of the pass")
+                break
             sym, r, err = fut.result()
             _HEARTBEAT["t"] = time.time()
             _HEARTBEAT["done"] = _HEARTBEAT.get("done", 0) + 1

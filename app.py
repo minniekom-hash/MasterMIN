@@ -165,6 +165,11 @@ _BOOTED = False
 # usually enough for the first rows and the rest arrive on the next poll.
 INLINE_WAIT_SEC = float(os.environ.get("INLINE_WAIT_SEC", "20"))
 
+# How long a pass may make no progress at all before the supervisor treats it
+# as wedged.  It has to sit above the slowest healthy pass: fifteen tickers,
+# four at a time, each with its own ceiling of ANALYZE_TIMEOUT.
+STALL_SEC = float(os.environ.get("STALL_SEC", "420"))
+
 
 def _inline_scan():
     """One scan on behalf of a request that found the dashboard empty."""
@@ -174,7 +179,30 @@ def _inline_scan():
         log.warning("inline scan failed: %s", ex)
 
 
+# Every worker that ever died, with its traceback.  A background thread that
+# dies quietly is indistinguishable from one that was never started, and both
+# look the same from outside: an empty page.  Keeping the reason means the
+# cause can be read instead of guessed at.
+WORKER_DEATHS: list = []
+
+
+def _record_death(name: str, ex: BaseException) -> None:
+    import traceback
+
+    WORKER_DEATHS.append(dict(name=name, error=f"{type(ex).__name__}: {str(ex)[:200]}",
+                              trace=traceback.format_exc()[-1500:], at=now_iso()))
+    del WORKER_DEATHS[:-10]
+    log.exception("worker %s died", name)
+
+
 def _scan_loop():
+    try:
+        _scan_loop_body()
+    except BaseException as ex:
+        _record_death("omega-scan", ex)
+
+
+def _scan_loop_body():
     log.info("scan loop starting (refresh=%ss, watchlist=%d)", REFRESH_SEC, len(engine.WATCHLIST))
     time.sleep(1.5)
     first = True
@@ -207,6 +235,13 @@ def _scan_loop():
 
 
 def _watchdog():
+    try:
+        _watchdog_body()
+    except BaseException as ex:
+        _record_death("omega-watchdog", ex)
+
+
+def _watchdog_body():
     """Restart a background worker if it ever stops, or unstick a wedged scan.
 
     A scanner that dies silently leaves the dashboard empty with no clue why,
@@ -218,12 +253,12 @@ def _watchdog():
     pass can ever start.  Detecting that by *progress* rather than by thread
     existence is what turns a permanently blank page into a self-healing one.
 
-    Python cannot kill a thread stuck in a syscall, so a single release() is not
-    always enough: a ghost worker can still be holding the analysis semaphore.
-    The escalation is therefore deliberate -- first try to unstick cheaply, and
-    if the pass is *still* wedged after another window, exit the process and let
-    the platform start a clean one.  On a free instance that is a few seconds of
-    downtime, which beats an empty dashboard forever.
+    The remedy is deliberately gentle.  Releasing the lock out from under a
+    running pass leaves the pass holding a lock it no longer owns, and swapping
+    the analysis semaphore orphans whoever was waiting on the old one -- both
+    turn one slow pass into a permanently broken service.  So the pass is
+    *asked* to stop and gives up at the next ticker, and only a service that is
+    still stuck a long time after that is replaced outright.
     """
     unstuck_at = 0.0
     while True:
@@ -235,20 +270,20 @@ def _watchdog():
                     log.warning("watchdog: %s is gone -- restarting", name)
                     threading.Thread(target=fn, daemon=True, name=name).start()
 
-            if engine.scan_stalled(150.0):
+            # A pass that is slow is not a wedged pass.  The bar has to sit
+            # above the slowest healthy pass (fifteen tickers, four at a time,
+            # each with its own ceiling), otherwise the watchdog tears down a
+            # scan that was working exactly as designed.
+            if engine.scan_stalled(STALL_SEC):
                 if not unstuck_at:
                     unstuck_at = time.time()
-                    log.warning("watchdog: scan made no progress -- releasing the "
-                                "lock and giving the next pass a fresh semaphore")
-                    try:
-                        engine.scan_lock.release()
-                    except Exception:
-                        pass
-                    engine._ANALYZE_SLOTS = threading.Semaphore(engine.ANALYZE_SLOTS)
-                elif time.time() - unstuck_at > 180.0 and engine.scan_stalled(150.0):
-                    # Still wedged after the cheap fix: the worker is stuck in a
-                    # syscall we cannot interrupt.  A clean process is the only
-                    # reliable cure, and the platform restarts us immediately.
+                    log.warning("watchdog: scan made no progress for %ss -- "
+                                "asking the pass to stop", STALL_SEC)
+                    engine.request_scan_stop()
+                elif time.time() - unstuck_at > 600.0:
+                    # Still stuck long after being asked to stop: the worker is
+                    # in a syscall we cannot interrupt.  A clean process is the
+                    # only reliable cure, and the platform restarts us at once.
                     log.error("watchdog: scan still wedged after escalation -- "
                               "exiting so the platform starts a clean worker")
                     logging.shutdown()
@@ -260,6 +295,13 @@ def _watchdog():
 
 
 def _probe_loop():
+    try:
+        _probe_loop_body()
+    except BaseException as ex:
+        _record_death("omega-probe", ex)
+
+
+def _probe_loop_body():
     time.sleep(20)
     while True:
         try:
@@ -272,21 +314,22 @@ def _probe_loop():
 def _boot():
     global _BOOTED
     with _BOOT:
-        if _BOOTED:
-            return
         if app.debug and os.environ.get("WERKZEUG_RUN_MAIN") != "true":
             return
-        _BOOTED = True
-        log.info("booting background workers")
+        if not _BOOTED:
+            _BOOTED = True
+            log.info("booting background workers")
+        # Every call checks the workers, not just the first one.  A worker that
+        # died -- or was never started because the process was already under
+        # pressure when it booted -- left the dashboard empty with nothing to
+        # bring it back, because the one-shot flag said "already booted".
         names = {t.name for t in threading.enumerate()}
-        if "omega-scan" not in names:
-            threading.Thread(target=_scan_loop, daemon=True, name="omega-scan").start()
-        if "omega-probe" not in names:
-            threading.Thread(target=_probe_loop, daemon=True, name="omega-probe").start()
-        if "omega-watchdog" not in names:
-            threading.Thread(target=_watchdog, daemon=True, name="omega-watchdog").start()
-        log.info("background workers started")
-        log.info("Omega v%s booted · watchlist=%s", VERSION, ",".join(engine.WATCHLIST))
+        for fn, name in ((_scan_loop, "omega-scan"), (_probe_loop, "omega-probe"),
+                         (_watchdog, "omega-watchdog")):
+            if name not in names:
+                log.warning("booting background workers: %s is missing -- starting it", name)
+                threading.Thread(target=fn, daemon=True, name=name).start()
+        log.info("background workers alive · watchlist=%s", ",".join(engine.WATCHLIST))
 
 
 # --------------------------------------------------------------------------- #
@@ -325,13 +368,19 @@ def api_scan():
     # request timeout.  Whatever has arrived is returned; the pass carries on and
     # the next poll picks up the rest.
     if not (STATE.get("items") or []):
-        if engine.scan_stalled(90.0):
-            log.warning("api/scan: taking over a wedged scan")
+        # A lock held by a thread that no longer exists is a lock nobody will
+        # ever release.  Take it back rather than waiting for a pass that is
+        # not coming.
+        if engine.scan_lock.locked() and not engine.scan_running():
+            log.warning("api/scan: the scan lock was left behind by a dead worker "
+                        "-- taking it back")
             try:
                 engine.scan_lock.release()
             except Exception:
                 pass
-            engine._ANALYZE_SLOTS = threading.Semaphore(engine.ANALYZE_SLOTS)
+        if engine.scan_stalled(90.0) and engine.scan_running():
+            log.warning("api/scan: taking over a wedged scan")
+            engine.request_scan_stop()
         if not engine.scan_lock.locked():
             threading.Thread(target=_inline_scan, daemon=True, name="omega-inline-scan").start()
             deadline = time.time() + INLINE_WAIT_SEC
@@ -385,9 +434,7 @@ def api_boot():
     alive = any(t.name == "omega-scan" for t in threading.enumerate())
     if not alive:
         log.warning("/api/boot: scan worker missing -- restarting it")
-        with _BOOT:
-            _BOOTED = False       # force _boot() past its one-shot guard
-        _boot()
+    _boot()
     # If nothing has ever been scanned, do not make the first visitor wait for
     # the thread's own schedule -- start a pass immediately.
     prog = STATE.get("progress") or {}
@@ -401,7 +448,12 @@ def api_boot():
                    progress=dict(STATE.get("progress") or {}),
                    items=len(STATE.get("items") or []),
                    scan_locked=engine.scan_lock.locked(),
-                   scan_stalled=engine.scan_stalled(150.0),
+                   scan_running=engine.scan_running(),
+                   scan_stalled=engine.scan_stalled(STALL_SEC),
+                   deaths=list(WORKER_DEATHS),
+                   stall_sec=STALL_SEC,
+                   analyze_timeout=engine.ANALYZE_TIMEOUT,
+                   trace=engine.trace_snapshot(),
                    heartbeat_age=round(time.time() - (engine._HEARTBEAT.get("t") or 0), 1)
                    if engine._HEARTBEAT.get("t") else None,
                    time=now_iso())
