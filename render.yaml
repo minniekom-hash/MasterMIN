@@ -30,12 +30,14 @@ services:
         value: "3000"
       # The instance has ample headroom (the scan peaks well under 300MB with
       # gigabytes free), and a wider scan is what makes the first cold view
-      # populate quickly rather than trickling in for minutes.  Four workers
-      # roughly halves the wall-clock time of a pass.
+      # populate quickly rather than trickling in for minutes.  Three workers
+      # is the point where a pass still fills the page quickly on one CPU
+      # without four full analyses holding four option chains in memory at
+      # once.
       - key: SCAN_WORKERS
-        value: "4"
+        value: "3"
       - key: ANALYZE_SLOTS
-        value: "4"
+        value: "3"
       - key: INLINE_WAIT_SEC
         value: "20"
       # Each real expiry date in the chain gets its own answer.  Four covers the

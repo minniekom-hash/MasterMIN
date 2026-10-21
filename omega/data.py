@@ -392,12 +392,36 @@ def chain(sym: str, ttl: int = 120):
             _mark("CBOE Chain", False)
             return None
         d = j["data"]
+        ts = j.get("timestamp")
+        opts = d.get("options") or []
+        spot = float(d.get("current_price") or 0.0)
+        meta = dict(symbol=d.get("symbol") or sym, spot=spot,
+                    bid=d.get("bid"), ask=d.get("ask"), volume=d.get("volume"),
+                    iv30=d.get("iv30"), open_price=d.get("open"), high=d.get("high"),
+                    low=d.get("low"), prev_close=d.get("prev_day_close"),
+                    close=d.get("close"), chg_pct=d.get("price_change_percent"))
+        # A liquid name has tens of thousands of contracts, and holding them
+        # all is what pushed the instance past its memory limit.  The analysis
+        # only ever looks at a band around the money and at the nearest
+        # expiries, so everything else is dropped while the chain is being read.
+        exps = set()
+        for o in opts:
+            p = _parse_osym(str(o.get("option") or ""))
+            if p:
+                exps.add(p[0])
+        keep_exps = set(sorted(exps)[:8])
+        lo = spot * 0.45 if spot > 0 else None
+        hi = spot * 1.55 if spot > 0 else None
         rows = []
-        for o in d.get("options") or []:
+        for o in opts:
             p = _parse_osym(str(o.get("option") or ""))
             if not p:
                 continue
             exp, kind, strike = p
+            if exp not in keep_exps:
+                continue
+            if lo is not None and not (lo <= strike <= hi):
+                continue
             rows.append(dict(
                 expiry=exp, kind=kind, strike=strike,
                 bid=o.get("bid") or 0.0, ask=o.get("ask") or 0.0,
@@ -410,18 +434,13 @@ def chain(sym: str, ttl: int = 120):
                 last_ts=o.get("last_trade_time"),
                 high=o.get("high") or 0.0, low=o.get("low") or 0.0, open=o.get("open") or 0.0,
             ))
+        del j, d, opts, o
         if not rows:
             _mark("CBOE Chain", False, "no contracts")
             return None
         _mark("CBOE Chain", True)
-        return dict(
-            symbol=d.get("symbol") or sym, spot=d.get("current_price") or 0.0,
-            bid=d.get("bid"), ask=d.get("ask"), volume=d.get("volume"),
-            iv30=d.get("iv30"), open_price=d.get("open"), high=d.get("high"),
-            low=d.get("low"), prev_close=d.get("prev_day_close"), close=d.get("close"),
-            chg_pct=d.get("price_change_percent"),
-            ts=j.get("timestamp"), rows=rows, fetched=now_iso(),
-        )
+        meta.update(ts=ts, rows=rows, fetched=now_iso())
+        return meta
 
     return cache.wrap(f"c:{sym}", ttl, load)
 
