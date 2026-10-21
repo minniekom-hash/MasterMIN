@@ -47,14 +47,11 @@ MAX_SPREAD = env_float("MAX_SPREAD", 0.25)
 MIN_DTE = env_int("MIN_DTE", 1)
 MAX_DTE = env_int("MAX_DTE", 21)
 TARGET_DTE = env_int("TARGET_DTE", 7)
-# Expiry horizons that get their own short/medium-term answer ("which strike
-# wins in ~3 days, and why").  Kept as a list so the dashboard can be pointed at
-# other windows without touching code.
-HORIZONS = env_list("HORIZONS", ["3", "5", "10"])
-try:
-    HORIZONS = [int(h) for h in HORIZONS if str(h).isdigit()]
-except Exception:
-    HORIZONS = [3, 5, 10]
+# Real expiry dates are used instead of fixed "1/3/7 day" buckets, because every
+# contract already states the date it must obey.  A chain can list a dozen
+# expiries; these are how many of the nearest ones get their own answer.
+MAX_EXPIRY_VIEWS = env_int("MAX_EXPIRY_VIEWS", 4)
+_WEEKDAY_TH = ("จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์", "อาทิตย์")
 SIMS = env_int("SIMS", 4000)
 HIST_WINDOW = env_int("HIST_WINDOW", 126)      # ~6 months of trading days
 STRIKE_BAND = env_float("STRIKE_BAND", 0.15)   # +/- 15% of spot
@@ -504,6 +501,9 @@ def build_strike(sym: str, row_c: dict, spot: float, kind: str, dte: float, n_da
     if r.get("hist_n", 0) >= 40 and r.get("model_pop") is not None:
         hist_edge = r["hist_win"] - r["model_pop"]
         r["hist_edge"] = round(hist_edge, 1)
+        z, pv, _ = edge_significance(r.get("hist_win"), r.get("hist_n_eff"),
+                                     r.get("model_pop"))
+        r["edge_z"], r["edge_p"] = z, pv
     edge_score = float(np.clip(50 + (hist_edge or 0) * 2.0, 0, 100))
     dir_score = float(np.clip(50 + 50 * ctx["signal"] * (1 if kind == "CALL" else -1), 0, 100))
     iv_score = float(np.clip(100 - ivr_ctx - max(0.0, ctx.get("vrp", 0)) * 1.5 - min(theta_bleed * 3, 35), 0, 100))
@@ -574,6 +574,62 @@ def _pick_expiry_for(exps: dict, target: int) -> str | None:
     return min(within, key=lambda e: (abs(exps[e] - target), exps[e]))
 
 
+def _pick_expiry_for(exps: dict, target: int) -> str | None:
+    """Chosen expiry for a horizon: closest to the target, ties broken by DTE."""
+    if not exps:
+        return None
+    within = [e for e, d in exps.items() if d <= target + 2] or list(exps)
+    return min(within, key=lambda e: (abs(exps[e] - target), exps[e]))
+
+
+# The fields a per-expiry card needs.  Kept in one place so the API payload and
+# the compact list view cannot drift apart from what the UI reads.
+_STRIKE_SLIM = (
+    "kind", "strike", "expiry", "dte", "premium", "breakeven", "pop", "pop_lo",
+    "pop_hi", "p_itm", "p_touch", "ev", "ev_pct", "omega", "verdict", "delta",
+    "hist_win", "hist_n", "hist_n_eff", "hist_edge", "cheap", "liquid", "volume",
+    "oi", "spread_pct", "iv", "iv_vs_atm", "dist_pct", "reliability", "headline",
+    "why", "risks", "pop_source", "model_pop", "hist_win_count", "hist_itm",
+    "hist_touch", "hist_avg_pnl", "hist_median_pnl", "hist_best_pnl",
+    "hist_worst_pnl", "hist_profit_factor", "hist_recent_win", "hist_older_win",
+    "hist_recent_n", "p_zero", "avg_win", "edge_z", "edge_p", "edge_signif",
+)
+
+
+def slim_strike(x: dict | None) -> dict | None:
+    if not x:
+        return None
+    return {k: x.get(k) for k in _STRIKE_SLIM}
+
+
+def edge_significance(p_hist: float | None, n_eff: float | None,
+                      p_ref: float | None) -> tuple:
+    """Is the counted win rate distinguishable from the price the market asks?
+
+    ``p_ref`` is the model's implied chance of finishing beyond breakeven, which
+    is what the option's premium already charges you for.  If history says 45%
+    and the price implies 45%, there is no edge -- you are paying exactly what the
+    outcome is worth.  An edge only exists when the counted rate is *reliably*
+    above that reference.
+
+    The test is deliberately one-sided (we only care whether the real rate beats
+    the price) and uses the effective sample size, so a 7-day horizon with 80
+    independent windows cannot claim the same certainty as a 500-window daily one.
+
+    Returns (z, p_value, label).
+    """
+    if p_hist is None or not n_eff or p_ref is None:
+        return (None, None, "")
+    p = float(p_hist) / 100.0
+    q = float(p_ref) / 100.0
+    var = max(p * (1.0 - p), 1e-6) / max(float(n_eff), 1.0)
+    if var <= 0:
+        return (None, None, "")
+    z = (p - q) / math.sqrt(var)
+    pv = 1.0 - quant.norm_cdf(z)          # one-sided
+    return (round(z, 2), round(pv, 4), "")
+
+
 def _sl_rank(group: list, net: float, ivr: float) -> None:
     """Rank strikes of one side inside one expiry (same idea as analyze()).
 
@@ -581,6 +637,12 @@ def _sl_rank(group: list, net: float, ivr: float) -> None:
     single-leg option always has negative EV in absolute terms; ranking inside
     the group is what surfaces the strike that is genuinely best *among its
     peers* rather than the same mid-band value for everything.
+
+    This is also where the multiple-testing correction happens.  We look at
+    dozens of strikes per ticker and keep the best one; the best of thirty
+    always looks good, so a raw 5% significance threshold would flag noise every
+    single cycle.  Each strike's p-value is therefore compared against
+    0.05 / (number of strikes examined), which is the Bonferroni bound.
     """
     if not group:
         return
@@ -593,12 +655,33 @@ def _sl_rank(group: list, net: float, ivr: float) -> None:
     evs = [nz(x.get("ev_pct")) for x in group]
     pops = [nz(x.get("pop")) for x in group]
     edges = [nz(x.get("hist_edge")) for x in group if x.get("hist_edge") is not None]
+    alpha = 0.05 / max(1, len(group))
     for x in group:
         dir_score = float(np.clip(50 + 50 * nz(net) * (1 if x["kind"] == "CALL" else -1), 0, 100))
         iv_score = float(np.clip(100 - nz(ivr, 50.0) - max(0.0, nz(x.get("iv_vs_atm"))) * 1.2, 0, 100))
         liq = float(np.clip(nz(x.get("liquidity")) * 100, 0, 100))
         edge = pct(edges, nz(x.get("hist_edge"))) if edges and x.get("hist_edge") is not None else 50.0
-        omega = (0.36 * pct(pops, nz(x.get("pop"))) + 0.26 * pct(evs, nz(x.get("ev_pct")))
+
+        # Decide whether this strike's historical edge survives the number of
+        # strikes we looked at.  ``edge_p`` is the one-sided p-value for
+        # "history beats the price"; for a strike that came out *worse* than the
+        # price the interesting tail is the other one, so it is recomputed.
+        z, pv = x.get("edge_z"), x.get("edge_p")
+        if z is None or pv is None:
+            x["edge_signif"] = "ไม่มีข้อมูลพอ"
+            edge = 50.0 if edge == 50.0 else 50.0 + (edge - 50.0) * 0.4
+        elif z > 0 and pv < alpha:
+            x["edge_signif"] = "มีนัยสำคัญ"
+        elif z < 0 and quant.norm_cdf(z) < alpha:
+            x["edge_signif"] = "แย่กว่าตลาดชัดเจน"
+            edge = 50.0 + (edge - 50.0) * 0.5
+        else:
+            x["edge_signif"] = "ยังไม่ชัดเจน"
+            # An edge that is not distinguishable from noise should not move the
+            # score much in either direction.
+            edge = 50.0 + (edge - 50.0) * 0.35
+
+        omega = (0.34 * pct(pops, nz(x.get("pop"))) + 0.28 * pct(evs, nz(x.get("ev_pct")))
                  + 0.14 * edge + 0.12 * liq + 0.07 * dir_score + 0.05 * iv_score)
         ad = abs(nz(x.get("delta")))
         if ad < 0.15 or ad > 0.85:
@@ -607,24 +690,32 @@ def _sl_rank(group: list, net: float, ivr: float) -> None:
             omega *= 0.93
         if not x.get("liquid"):
             omega *= 0.85
+        # A pick whose counted edge is merely noise must not outrank one that is
+        # actually evidenced at this sample size.
+        if x.get("edge_signif") == "ยังไม่ชัดเจน":
+            omega *= 0.95
         x["omega"] = round(float(np.clip(nz(omega), 0, 100)), 1)
         x["verdict"] = ("ULTIMATE" if x["omega"] >= 72 else "HIGH" if x["omega"] >= 62 else
                         "WATCH" if x["omega"] >= 52 else "NONE")
 
 
-def _horizon_reason(best: dict | None, top: dict | None, kind: str, hz: int,
-                    spot: float, em: float, net: float, dte: int) -> str:
-    """One plain-language sentence: why this strike at this horizon."""
+def _horizon_reason(best: dict | None, top: dict | None, kind: str, dte: int,
+                    spot: float, em: float, net: float) -> str:
+    """One plain-language sentence: why this strike at this expiry.
+
+    Everything here is either a fact about the contract (strike, breakeven, DTE)
+    or a count over real prices.  The model appears only as the comparison it
+    actually is -- the chance the premium already charges you for.
+    """
     pick = best or top
     if not pick:
-        return f"ไม่พบสัญญา {kind} ที่มีสภาพคล่องพอในช่วง {hz} วัน"
+        return f"ไม่พบสัญญา {kind} ที่มีสภาพคล่องพอในช่วง {dte} วันนี้"
     strike = nz(pick.get("strike"))
     dist = (strike / spot - 1) * 100 if spot else 0.0
     # Where the strike sits relative to spot is a plain fact; the wording must not
     # imply a direction the trade does not need.  A PUT can be struck above spot
     # and still be the pick, so describe the position, not the expectation.
     where = ("สูงกว่าราคาปัจจุบัน" if dist >= 0 else "ต่ำกว่าราคาปัจจุบัน")
-    p_itm = nz(pick.get("p_itm"))
     bits = []
     if kind == "CALL":
         bits.append(f"ต้องปิดเหนือ ${pick['breakeven']:g} ภายใน {dte} วัน "
@@ -632,14 +723,36 @@ def _horizon_reason(best: dict | None, top: dict | None, kind: str, hz: int,
     else:
         bits.append(f"ต้องปิดใต้ ${pick['breakeven']:g} ภายใน {dte} วัน "
                     f"(strike ${strike:g} {where} {abs(dist):.1f}%)")
-    if p_itm > 0:
-        bits.append(f"โอกาสจบในสถานะได้เปรียบ (ITM) {p_itm:.0f}%")
-    bits.append(f"แบบจำลองให้โอกาสจบเป็นกำไร {nz(pick.get('pop')):.0f}% "
-                f"(สุ่ม 4 วิธี ช่วงความเชื่อมั่น {nz(pick.get('pop_lo')):.0f}–{nz(pick.get('pop_hi')):.0f}%)")
-    if pick.get("hist_win") is not None:
-        diff = nz(pick.get("hist_edge"))
-        bits.append(f"สถิติจริง 6 เดือนแบบเดียวกันชนะ {pick['hist_win']:.0f}% "
-                    f"({'สูงกว่า' if diff > 0 else 'ต่ำกว่า'}แบบจำลอง {abs(diff):.0f} จุด)")
+
+    wc, n = pick.get("hist_win_count"), pick.get("hist_n")
+    if wc is not None and n:
+        bits.append(f"นับจริงจากประวัติ {n} รอบสูตรเดียวกัน: กำไร {wc} รอบ "
+                    f"= {nz(pick.get('pop')):.0f}% "
+                    f"(ช่วง 95% {nz(pick.get('pop_lo')):.0f}–{nz(pick.get('pop_hi')):.0f}%)")
+    neff = pick.get("hist_n_eff")
+    if neff and n and neff < n * 0.9:
+        # Overlapping windows are not independent evidence, and hiding that
+        # would make the far expiries look more certain than they are.
+        bits.append(f"รอบที่เป็นอิสระจริงประมาณ {neff} รอบ (หน้าต่างซ้อนกัน)")
+
+    pnl = pick.get("hist_avg_pnl")
+    if pnl is not None:
+        pf = pick.get("hist_profit_factor")
+        bits.append(f"กำไรเฉลี่ยต่อสัญญา ${pnl:+.2f}"
+                    + (f" · กำไร/ขาดทุนรวม {pf:.2f} เท่า" if pf is not None else ""))
+
+    if pick.get("model_pop") is not None:
+        bits.append(f"ราคาที่ตลาดเรียกอยู่คิดเป็นโอกาสราว {nz(pick.get('model_pop')):.0f}% "
+                    f"→ ต่างจากของจริง {nz(pick.get('hist_edge')):+.0f} จุด")
+
+    sig = pick.get("edge_signif")
+    if sig == "มีนัยสำคัญ":
+        bits.append("ส่วนต่างนี้ผ่านการทดสอบทางสถิติที่จำนวนตัวอย่างนี้ (นับรวมการเทียบหลาย strike แล้ว)")
+    elif sig == "แย่กว่าตลาดชัดเจน":
+        bits.append("ระวัง: สถิติจริงแย่กว่าราคาที่ตลาดเรียกอย่างชัดเจน")
+    elif sig == "ยังไม่ชัดเจน":
+        bits.append("ยังบอกไม่ได้ว่าส่วนต่างนี้เป็นของจริงหรือความบังเอิญ")
+
     if pick.get("cheap"):
         bits.append("พรีเมียมถูก (ไม่เกิน 3% ของราคาหุ้น)")
     if pick.get("liquid"):
@@ -648,19 +761,29 @@ def _horizon_reason(best: dict | None, top: dict | None, kind: str, hz: int,
     # is worth naming when it is the thing holding the pick back.
     elif nz(pick.get("spread_pct")) > 25:
         bits.append(f"ระวัง: spread กว้าง {nz(pick.get('spread_pct')):.0f}% (ขาดทุนทันทีที่ซื้อ)")
-    bits.append(f"ตลาดคาดแกว่ง ±${em:.2f} ในกรอบนี้")
+    bits.append(f"ตลาดคาดแกว่ง ±${em:.2f} จนถึงวันหมดอายุนี้")
     return " · ".join(bits)
 
 
 def horizon_view(ch: dict, spot: float, close, high, low, atm_iv: float, sigma_hist: float,
                  logret, net: float, ivr: float, earnings: bool,
                  dist_full_fn=None) -> dict:
-    """Best CALL and PUT for each configured horizon, with reasons.
+    """One answer per *real* expiry date in the chain.
 
-    This answers the question traders actually ask -- "if I want ~3 days, which
-    strike, and why?" -- instead of only reporting one auto-chosen expiry.  Each
-    horizon gets its own simulation at its own time to expiry, so the numbers are
-    not rescaled from a different window.
+    Options do not expire in neat "1 day / 3 day / 7 day" buckets -- every
+    contract carries its own date, and that date is the only thing the trade
+    actually has to obey.  So instead of forcing three arbitrary windows and then
+    apologising when no matching expiry exists, this walks the expiry dates the
+    chain really lists, keeps the nearest few that are still worth trading, and
+    answers each one on its own time to expiry.
+
+    Keying by the expiry date also removes a subtle lie in the old code: two
+    different "horizons" could resolve to the same date and show identical
+    contracts twice, once labelled 3 days and once labelled 5.
+
+    Every number for an expiry is computed at *that* expiry's own DTE -- its own
+    historical window length, its own simulation, its own expected move -- so
+    nothing is rescaled from a neighbouring date.
     """
     today = datetime.now(timezone.utc).date()
     exps: dict = {}
@@ -669,34 +792,31 @@ def horizon_view(ch: dict, spot: float, close, high, low, atm_iv: float, sigma_h
             d = (datetime.strptime(r["expiry"], "%Y-%m-%d").date() - today).days
         except Exception:
             continue
-        if MIN_DTE <= d <= max(MAX_DTE, max(HORIZONS) + 2 if HORIZONS else MAX_DTE):
+        if MIN_DTE <= d <= MAX_DTE:
             exps[r["expiry"]] = d
+    if not exps:
+        return {}
+
+    # Nearest expiries first; a chain can list a dozen and the far ones are not
+    # what a short-dated trader is choosing between.
+    ordered = sorted(exps.items(), key=lambda kv: (kv[1], kv[0]))[:MAX_EXPIRY_VIEWS]
 
     out: dict = {}
-    for hz in HORIZONS:
-        exp = _pick_expiry_for(exps, hz)
-        if not exp:
-            out[str(hz)] = dict(days=hz, error="ไม่มีออปชันหมดอายุในช่วงนี้")
-            continue
-        dte = exps[exp]
+    for exp, dte in ordered:
         T = max(dte / 365.0, 1e-4)
         n_days = max(int(round(dte * 5 / 7)), 1)
-        # Say so plainly when the requested window has no listed expiry and a
-        # nearby one is used instead -- otherwise a "5 day" card showing a 3-day
-        # contract looks like a bug rather than a fact about the option chain.
-        substituted = abs(dte - hz) > 1
         sigma_mix = float(np.clip(0.65 * atm_iv + 0.35 * sigma_hist, 0.03, 4.0))
         mu = RF + 0.10 * net
         simset = sim.simulate(spot, T, n_days, sigma_mix, mu, logret,
-                              sims=max(1200, SIMS // 2), seed=_seed(f"{exp}{hz}") % 2_000_000_000)
+                              sims=max(1200, SIMS // 2), seed=_seed(exp) % 2_000_000_000)
         dist = sim.hist_distributions(close, high, low, n_days, HIST_WINDOW)
         dist_full = (dist_full_fn(close, high, low, n_days, 504) if dist_full_fn
                      else sim.hist_distributions_full(close, high, low, n_days, 504))
         em = quant.expected_move(spot, sigma_mix, T)
         ctx = dict(signal=net, em_pct=round(em / spot * 100, 2), n_days=n_days, months=6,
                    vrp=0.0, iv_rank=ivr, earnings=earnings, tech={}, flow={}, spot=spot,
-                   sigma_hist=sigma_hist * 100, news_n=0, hist_n=(dist_full["n"] if dist_full else 0),
-                   dte=dte, expiry=exp)
+                   sigma_hist=sigma_hist * 100, news_n=0,
+                   hist_n=(dist_full["n"] if dist_full else 0), dte=dte, expiry=exp)
 
         lo, hi = spot * (1 - STRIKE_BAND), spot * (1 + STRIKE_BAND)
         rows = [r for r in ch["rows"] if r["expiry"] == exp and lo <= r["strike"] <= hi]
@@ -707,7 +827,8 @@ def horizon_view(ch: dict, spot: float, close, high, low, atm_iv: float, sigma_h
             r = dict(r)
             by_strike.setdefault(r["strike"], {})[r["kind"]] = r
         all_k = sorted(by_strike, key=lambda k: abs(k - spot))
-        keep = set(all_k[:MAX_STRIKES // 2] + sorted([k for k in all_k if k <= spot])[-5:]
+        keep = set(all_k[:MAX_STRIKES // 2]
+                   + sorted([k for k in all_k if k <= spot])[-5:]
                    + sorted([k for k in all_k if k > spot])[:5])
         calls, puts = [], []
         for k in sorted(keep):
@@ -715,7 +836,7 @@ def horizon_view(ch: dict, spot: float, close, high, low, atm_iv: float, sigma_h
                 r = by_strike[k].get(kind)
                 if not r:
                     continue
-                st = build_strike(f"{hz}d", r, spot, kind, dte, n_days, simset, dist,
+                st = build_strike(exp, r, spot, kind, dte, n_days, simset, dist,
                                   close, atm_iv, sigma_hist, T, ctx, dist_full)
                 if st:
                     bucket.append(st)
@@ -731,37 +852,18 @@ def horizon_view(ch: dict, spot: float, close, high, low, atm_iv: float, sigma_h
             pool = strong or group
             return max(pool, key=lambda x: (nz(x.get("pop")), x["omega"]))
 
-        def slim(x):
-            if not x:
-                return None
-            return {k: x.get(k) for k in (
-                "kind", "strike", "expiry", "dte", "premium", "breakeven", "pop", "pop_lo",
-                "pop_hi", "p_itm", "p_touch", "ev", "ev_pct", "omega", "verdict", "delta",
-                "hist_win", "hist_n", "hist_edge", "cheap", "liquid", "volume", "oi",
-                "spread_pct", "iv", "iv_vs_atm", "dist_pct", "reliability", "headline",
-                "why", "risks", "pop_source", "model_pop", "hist_win_count", "hist_itm",
-                "hist_touch", "hist_avg_pnl", "hist_median_pnl", "hist_best_pnl",
-                "hist_worst_pnl", "hist_profit_factor", "hist_recent_win", "hist_older_win",
-                "hist_recent_n", "p_zero", "avg_win")}
-
         tc = pick_side(calls)
         tp = pick_side(puts)
-        # When the requested window has no listed expiry, say which one was used
-        # instead.  Different horizons can legitimately share one expiry (a chain
-        # often lists only weekly and monthly dates), and without this note a
-        # "5 day" card showing a 3-day contract reads like a bug.
-        note = ""
-        if substituted:
-            note = (f"ไม่มีออปชันหมดอายุใกล้ {hz} วัน · ใช้ตัวที่ใกล้ที่สุด "
-                    f"{exp} (อีก {dte} วัน) แทน")
-        out[str(hz)] = dict(
-            days=hz, expiry=exp, dte=dte, n_days=n_days, substituted=substituted, note=note,
+        out[exp] = dict(
+            expiry=exp, dte=dte, n_days=n_days,
+            weekday=_WEEKDAY_TH[datetime.strptime(exp, "%Y-%m-%d").weekday()],
+            label=f"{exp} · {_WEEKDAY_TH[datetime.strptime(exp, '%Y-%m-%d').weekday()]} (อีก {dte} วัน)",
             expected_move=round(em, 2), em_low=round(spot - em, 2), em_high=round(spot + em, 2),
             sigma=round(sigma_mix * 100, 1),
-            call=slim(tc), put=slim(tp),
+            call=slim_strike(tc), put=slim_strike(tp),
             n_calls=len(calls), n_puts=len(puts),
-            call_reason=_horizon_reason(tc, tc, "CALL", hz, spot, em, net, dte),
-            put_reason=_horizon_reason(tp, tp, "PUT", hz, spot, em, net, dte),
+            call_reason=_horizon_reason(tc, tc, "CALL", dte, spot, em, net),
+            put_reason=_horizon_reason(tp, tp, "PUT", dte, spot, em, net),
             winner=("CALL" if nz((tc or {}).get("pop")) >= nz((tp or {}).get("pop")) else "PUT"),
         )
     return out
@@ -1062,16 +1164,17 @@ def _analyze_inner(sym: str) -> dict | None:
     primary = best_call if bias == "CALL" else best_put
     alt = best_put if bias == "CALL" else best_call
 
-    # ---- explicit 3 / 5 / 10-day answers -----------------------------------
-    # The auto-chosen expiry above is one opinion; traders usually know their own
-    # window.  This runs the same machinery once per configured horizon so each
-    # gets a truthful, self-contained best CALL and best PUT with a reason.
+    # ---- answer for every real expiry in the chain --------------------------
+    # The auto-chosen expiry above is one opinion.  This runs the same machinery
+    # once per expiry the chain actually lists, so each date gets a truthful,
+    # self-contained best CALL and best PUT with the reason why.
     try:
-        base["horizons"] = horizon_view(ch, spot, close, high, low, atm_iv, sigma_hist,
-                                        logret, net, ivr, bool(earn), sim.hist_distributions_full)
+        base["expiries"] = horizon_view(ch, spot, close, high, low, atm_iv, sigma_hist,
+                                        logret, net, ivr, bool(earn),
+                                        sim.hist_distributions_full)
     except Exception as ex:
-        log.info("horizons %s: %s", sym, ex)
-        base["horizons"] = {}
+        log.info("expiries %s: %s", sym, ex)
+        base["expiries"] = {}
 
     # ---- narrative ---------------------------------------------------------
     trend = ("ขาขึ้น" if d_info.get("stack") == 1 else "ขาลง" if d_info.get("stack") == -1 else "ไร้ทิศทาง")
@@ -1182,7 +1285,8 @@ _STRIKE_KEEP = (
     "pop_source", "model_pop", "model_pop_lo", "model_pop_hi", "hist_win_count",
     "hist_itm", "hist_touch", "hist_avg_pnl", "hist_median_pnl", "hist_best_pnl",
     "hist_worst_pnl", "hist_profit_factor", "hist_recent_win", "hist_older_win",
-    "hist_recent_n", "p_zero", "avg_win", "fair_value",
+    "hist_recent_n", "p_zero", "avg_win", "fair_value", "hist_n_eff",
+    "edge_signif",
 )
 _TICKER_KEEP = (
     "ticker", "name", "spot", "spot_source", "chain_ts", "signal", "bias",
@@ -1190,7 +1294,7 @@ _TICKER_KEEP = (
     "iv_rank", "iv_pct", "vrp", "sigma_hist", "sigma_model", "earnings",
     "expected_move", "em_low", "em_high", "expiry", "dte", "n_days",
     "reliability", "omega", "verdict", "error", "hist", "regime", "tech",
-    "flow", "iv30", "move_stats", "horizons",
+    "flow", "iv30", "move_stats", "expiries", "expiry_list",
 )
 
 
@@ -1225,19 +1329,20 @@ def compact_for_scan(r: dict) -> dict:
                               social=nd.get("social", {}), note=nd.get("note", ""))
     out["guide"] = (r.get("guide") or [])[:3]
     out["answer"] = (r.get("answer") or [])[:2]
-    # Horizons are the 3/5/10-day answer the dashboard leads with. Keep the pick
-    # and the reason, drop the per-strike why/risks prose (the reason sentence
-    # already says the same thing) and keep only the strike fields the horizon
-    # cards actually render -- at 15 tickers x 3 horizons x 2 sides the extra
-    # fields alone doubled the stored scan.
+    # Per-expiry answers.  Keep the pick and its reason, drop the per-strike
+    # why/risks prose (the reason sentence already says the same thing) and keep
+    # only the fields the expiry cards actually render -- at 15 tickers x 4
+    # expiries x 2 sides the extra fields alone would double the stored scan.
     _HZ_STRIKE_KEEP = (
         "kind", "strike", "expiry", "dte", "premium", "breakeven", "pop", "pop_lo",
         "pop_hi", "p_itm", "omega", "verdict", "delta", "hist_win", "hist_edge",
-        "hist_n", "cheap", "liquid", "spread_pct", "pop_source", "model_pop",
-        "hist_win_count", "hist_avg_pnl", "hist_recent_win", "hist_older_win",
+        "hist_n", "hist_n_eff", "cheap", "liquid", "spread_pct", "pop_source",
+        "model_pop", "hist_win_count", "hist_avg_pnl", "hist_median_pnl",
+        "hist_profit_factor", "hist_recent_win", "hist_older_win", "edge_signif",
+        "volume", "oi", "iv_vs_atm",
     )
     hz = {}
-    for k, v in (r.get("horizons") or {}).items():
+    for k, v in (r.get("expiries") or {}).items():
         if not isinstance(v, dict):
             continue
         v = dict(v)
@@ -1245,7 +1350,8 @@ def compact_for_scan(r: dict) -> dict:
             s = v.get(side)
             v[side] = ({kk: s.get(kk) for kk in _HZ_STRIKE_KEEP} if isinstance(s, dict) else None)
         hz[k] = v
-    out["horizons"] = hz
+    out["expiries"] = hz
+    out["expiry_list"] = list(r.get("expiries") or {})
     return out
 
 

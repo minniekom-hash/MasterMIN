@@ -1,701 +1,592 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="th">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OPTION TRADE · Omega Singularity Engine v{{version}}</title>
+<title>OMEGA · ตัวช่วยเลือกออปชัน</title>
 <style>
   :root{
-    --bg:#06080c; --panel:#0d1117; --panel2:#111823; --line:#1e2836;
-    --gold:#e3b341; --gold2:#f5d67b; --txt:#e6edf3; --dim:#8b98a9; --dim2:#5f6b7c;
-    --up:#2ecc71; --down:#ff5f56; --warn:#f0a020; --info:#4aa8ff; --pur:#b07cff;
-    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+    color-scheme: dark;
+    --bg:#070a0f; --panel:#0c1117; --panel2:#0f151d; --line:#1c2531;
+    --text:#e9e7e2; --dim:#7f8b99; --dim2:#5c6673;
+    --gold:#d9b166; --gold2:#f0d199;
+    --green:#3fbf7f; --red:#ef5f5f; --blue:#5aa9e6; --amber:#e6b34a;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
   }
   *{box-sizing:border-box}
   html,body{margin:0;padding:0}
-  body{
-    background:
-      radial-gradient(1200px 600px at 20% -10%,rgba(227,179,65,.10),transparent 60%),
-      radial-gradient(900px 500px at 100% 0%,rgba(74,168,255,.07),transparent 55%),
-      var(--bg);
-    color:var(--txt); font-family:"Segoe UI",system-ui,-apple-system,"Noto Sans Thai",sans-serif;
-    font-size:14.5px; line-height:1.55; padding:0 0 60px;
-  }
-  a{color:var(--gold)}
-  .wrap{max-width:1560px;margin:0 auto;padding:0 16px}
-  header{border-bottom:1px solid var(--line);background:linear-gradient(180deg,rgba(227,179,65,.07),transparent)}
-  .hrow{display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between;padding:14px 0}
-  h1{margin:0;font-size:21px;letter-spacing:.6px}
-  h1 b{color:var(--gold)}
-  .sub{color:var(--dim);font-size:12.5px;margin-top:2px}
-  .clocks{display:flex;gap:8px;flex-wrap:wrap}
-  .pill{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:5px 11px;font-size:12px;color:var(--dim)}
-  .pill b{color:var(--txt);font-family:var(--mono)}
-  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--dim2);margin-right:6px;vertical-align:middle}
-  .dot.on{background:var(--up);box-shadow:0 0 8px var(--up)}
-  .dot.off{background:var(--down)}
-  h2{font-size:16px;margin:26px 0 10px;letter-spacing:.4px;display:flex;align-items:center;gap:9px}
-  h2::before{content:"";width:4px;height:16px;border-radius:2px;background:linear-gradient(180deg,var(--gold2),var(--gold))}
-  h3{font-size:14px;margin:16px 0 8px;color:var(--gold2)}
-  .muted{color:var(--dim)}
-  .tiny{font-size:11.5px}
-  .card{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:12px;padding:13px 14px}
-  .grid{display:grid;gap:12px}
-  .g2{grid-template-columns:repeat(auto-fit,minmax(330px,1fr))}
-  .g3{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
-  .g4{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
-  .kpi{display:flex;flex-direction:column;gap:3px}
-  .kpi .k{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.6px}
-  .kpi .v{font-family:var(--mono);font-size:19px;font-weight:600}
-  .tag{display:inline-block;font-size:10.5px;padding:2px 7px;border-radius:999px;border:1px solid var(--line);color:var(--dim);white-space:nowrap}
-  .tag.gold{border-color:rgba(227,179,65,.45);color:var(--gold2);background:rgba(227,179,65,.09)}
-  .tag.green{border-color:rgba(46,204,113,.4);color:var(--up);background:rgba(46,204,113,.09)}
-  .tag.red{border-color:rgba(255,95,86,.4);color:var(--down);background:rgba(255,95,86,.09)}
-  .tag.blue{border-color:rgba(74,168,255,.4);color:var(--info);background:rgba(74,168,255,.09)}
-  .tag.warn{border-color:rgba(240,160,32,.4);color:var(--warn);background:rgba(240,160,32,.09)}
-  .tag.pur{border-color:rgba(176,124,255,.4);color:var(--pur);background:rgba(176,124,255,.09)}
-  table{width:100%;border-collapse:collapse;font-size:12.8px}
-  th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
-  th{color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px;background:#0b0f15;position:sticky;top:0;z-index:2}
-  th:first-child,td:first-child{text-align:left}
-  tbody tr:hover{background:rgba(227,179,65,.05)}
-  .scroll{overflow:auto;border:1px solid var(--line);border-radius:12px;max-height:640px}
-  .scroll.tall{max-height:none}
-  .mono{font-family:var(--mono)}
-  .up{color:var(--up)} .down{color:var(--down)} .gold{color:var(--gold2)} .dim{color:var(--dim)}
-  .bar{position:relative;height:16px;border-radius:4px;background:#0a0d12;border:1px solid var(--line);min-width:82px;overflow:hidden}
-  .bar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px 0 0 3px}
-  .bar span{position:absolute;right:4px;top:-1px;font-size:10.5px;font-family:var(--mono);color:var(--txt)}
-  .bar .ci{position:absolute;top:0;bottom:0;background:rgba(255,255,255,.14);border-left:1px solid rgba(255,255,255,.35);border-right:1px solid rgba(255,255,255,.35)}
-  .btn{cursor:pointer;border:1px solid var(--line);background:var(--panel2);color:var(--txt);border-radius:8px;padding:5px 11px;font-size:12.3px;transition:.15s}
-  .btn:hover{border-color:var(--gold);color:var(--gold2)}
-  .btn.primary{background:linear-gradient(180deg,rgba(227,179,65,.22),rgba(227,179,65,.07));border-color:rgba(227,179,65,.5);color:var(--gold2)}
-  .btn.mini{padding:3px 8px;font-size:11.3px}
-  input[type=text]{background:#0a0d12;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:8px 11px;font-family:var(--mono);width:150px;outline:none}
-  input[type=text]:focus{border-color:var(--gold)}
-  .row{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
-  .why{border-left:2px solid var(--gold);background:rgba(227,179,65,.05);padding:9px 12px;border-radius:0 8px 8px 0;margin:6px 0}
-  .risk{border-left:2px solid var(--down);background:rgba(255,95,86,.06);padding:9px 12px;border-radius:0 8px 8px 0;margin:6px 0}
-  ul.clean{margin:6px 0;padding-left:19px}
-  ul.clean li{margin:4px 0}
-  dialog{border:1px solid var(--line);border-radius:14px;background:#0a0e14;color:var(--txt);max-width:1500px;width:96vw;padding:0}
-  dialog::backdrop{background:rgba(0,0,0,.72);backdrop-filter:blur(3px)}
-  .dhead{position:sticky;top:0;background:linear-gradient(180deg,#131b26,#0d1117);border-bottom:1px solid var(--line);padding:13px 16px;display:flex;justify-content:space-between;gap:12px;align-items:center;z-index:5;flex-wrap:wrap}
-  .dbody{padding:14px 16px 26px;max-height:82vh;overflow:auto}
-  .tabs{display:flex;gap:6px;margin:10px 0}
-  .tab{cursor:pointer;padding:6px 14px;border:1px solid var(--line);border-radius:8px 8px 0 0;font-size:13px;color:var(--dim);background:#0b0f15}
-  .tab.on{color:var(--gold2);border-color:rgba(227,179,65,.5);background:rgba(227,179,65,.1)}
-  .spin{display:inline-block;width:13px;height:13px;border:2px solid var(--line);border-top-color:var(--gold);border-radius:50%;animation:sp .8s linear infinite;vertical-align:-2px}
-  @keyframes sp{to{transform:rotate(360deg)}}
-  .banner{border:1px dashed var(--line);border-radius:10px;padding:11px 13px;color:var(--dim);font-size:12.6px}
-  footer{margin-top:34px;border-top:1px solid var(--line);padding-top:14px;color:var(--dim2);font-size:11.6px}
-  .verdict{font-family:var(--mono);font-weight:700;letter-spacing:.5px}
-  .v-ULTIMATE{color:#ffd76e} .v-HIGH{color:var(--up)} .v-WATCH{color:var(--info)} .v-NONE{color:var(--dim2)}
-  .split{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-  @media(max-width:900px){.split{grid-template-columns:1fr}}
-  .hbar{height:6px;border-radius:3px;background:#0a0d12;border:1px solid var(--line);overflow:hidden;margin-top:5px}
-  .hbar i{display:block;height:100%}
-  .scoreline{display:flex;justify-content:space-between;font-size:11.5px;color:var(--dim)}
-  .pick{border:1px solid var(--line);border-radius:12px;padding:12px;background:linear-gradient(180deg,#131a24,#0d1117)}
-  .pick.call{border-color:rgba(46,204,113,.35)}
-  .pick.put{border-color:rgba(255,95,86,.35)}
-  .big{font-size:26px;font-family:var(--mono);font-weight:700;line-height:1.1}
-  .sep{height:1px;background:var(--line);margin:12px 0}
+  body{background:var(--bg);color:var(--text);
+       font-family:ui-sans-serif,system-ui,"Segoe UI",Tahoma,sans-serif;
+       font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased}
+  a{color:var(--gold2);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .dim{color:var(--dim)} .dim2{color:var(--dim2)}
+  .tiny{font-size:11.5px} .small{font-size:12.5px}
+  .up{color:var(--green)} .down{color:var(--red)} .gold{color:var(--gold)}
+  .call{color:var(--green)} .put{color:var(--red)}
+  h2{font-size:15px;margin:26px 0 10px;letter-spacing:.02em;font-weight:650}
+  h3{font-size:13px;margin:16px 0 8px;color:var(--gold);font-weight:650;letter-spacing:.03em}
+
+  header{position:sticky;top:0;z-index:30;background:rgba(7,10,15,.94);
+         backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .hbar{max-width:1180px;margin:0 auto;padding:11px 18px;display:flex;
+        align-items:center;gap:14px;flex-wrap:wrap}
+  .brand{font-weight:700;letter-spacing:.06em;font-size:14px}
+  .brand .g{color:var(--gold)}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;
+        border:1px solid var(--line);background:var(--panel);font-size:11.5px;color:var(--dim)}
+  .pill b{color:var(--text);font-weight:600}
+  .spacer{flex:1}
+  main{max-width:1180px;margin:0 auto;padding:0 18px 70px}
+
+  .banner{border:1px solid var(--line);background:var(--panel);border-radius:12px;
+          padding:11px 14px;font-size:12.5px;line-height:1.6}
+  .banner.warn{border-color:#5a4320;background:#171106;color:#e7cfa4}
+  .banner.info{border-color:#1d3345;background:#08131c;color:#a9cde6}
+
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:16px 0}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:11px 13px}
+  .kpi .k{display:block;color:var(--dim);font-size:11px;letter-spacing:.03em;margin-bottom:3px}
+  .kpi .v{font-size:19px;font-weight:650}
+
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+  .pick{background:linear-gradient(180deg,var(--panel2),var(--panel));
+        border:1px solid var(--line);border-radius:14px;padding:14px 15px}
+  .pick.c{border-left:3px solid var(--green)}
+  .pick.p{border-left:3px solid var(--red)}
+  .pick .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+  .pick .tick{font-size:17px;font-weight:700;letter-spacing:.02em}
+  .pick .big{font-size:27px;font-weight:700;font-family:var(--mono);line-height:1.15;margin:6px 0 2px}
+  .tag{display:inline-block;padding:2px 8px;border-radius:6px;font-size:10.5px;
+       font-weight:700;letter-spacing:.06em;border:1px solid transparent}
+  .tag.green{background:#0c2418;color:var(--green);border-color:#1c4630}
+  .tag.red{background:#2a0f0f;color:var(--red);border-color:#4d1d1d}
+  .tag.gold{background:#241c0a;color:var(--gold);border-color:#4a3a12}
+  .tag.blue{background:#0a1c2a;color:var(--blue);border-color:#15384f}
+  .tag.grey{background:#141a21;color:var(--dim);border-color:var(--line)}
+
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:7px 9px;text-align:right;border-bottom:1px solid var(--line);
+        font-size:12.5px;white-space:nowrap}
+  th{color:var(--dim);font-weight:600;font-size:11px;letter-spacing:.04em;
+     text-transform:uppercase;position:sticky;top:0;background:var(--panel);z-index:2}
+  td:first-child,th:first-child{text-align:left}
+  tbody tr:hover{background:#0e141b}
+  .scroll{overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+  .scroll.tall{max-height:460px}
+
+  .bar{position:relative;height:6px;border-radius:99px;background:#131a22;min-width:74px}
+  .bar i{position:absolute;top:0;bottom:0;left:0;border-radius:99px;background:var(--gold)}
+  .bar u{position:absolute;top:-2px;bottom:-2px;width:1px;background:var(--dim);opacity:.75}
+
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
+  .tab{padding:6px 12px;border-radius:9px;border:1px solid var(--line);background:var(--panel);
+       color:var(--dim);cursor:pointer;font-size:12.5px}
+  .tab.on{background:#1b1508;border-color:#4a3a12;color:var(--gold2);font-weight:650}
+
+  dialog{border:1px solid var(--line);border-radius:16px;background:var(--bg);color:var(--text);
+         width:min(1120px,96vw);max-height:92vh;padding:0}
+  dialog::backdrop{background:rgba(0,0,0,.72)}
+  .dhead{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);
+         padding:14px 18px;display:flex;gap:12px;align-items:flex-start}
+  .dbody{padding:14px 18px 26px}
+  .x{margin-left:auto;background:transparent;border:1px solid var(--line);color:var(--dim);
+     border-radius:8px;padding:5px 11px;cursor:pointer;font-size:13px}
+  .x:hover{color:var(--text);border-color:var(--dim)}
+
+  button.act{background:linear-gradient(180deg,#e3c07a,#c99f4e);color:#0a0d12;border:0;
+             border-radius:9px;padding:8px 14px;font-weight:700;cursor:pointer;font-size:12.5px}
+  button.ghost{background:transparent;border:1px solid var(--line);color:var(--dim);
+               border-radius:8px;padding:5px 10px;cursor:pointer;font-size:11.5px}
+  button.ghost:hover{color:var(--text);border-color:var(--dim)}
+
+  .spin{display:inline-block;width:13px;height:13px;border:2px solid #2a3542;
+        border-top-color:var(--gold);border-radius:50%;animation:s .7s linear infinite;vertical-align:-2px}
+  @keyframes s{to{transform:rotate(360deg)}}
+  .prog{height:4px;background:#131a22;border-radius:99px;overflow:hidden;margin-top:8px}
+  .prog i{display:block;height:100%;background:linear-gradient(90deg,#8a6a28,var(--gold));transition:width .4s}
+  ul.clean{margin:6px 0 0;padding-left:17px}
+  ul.clean li{margin:3px 0}
+  .risk{background:#170b0b;border:1px solid #4a1e1e;color:#f0b7b7;border-radius:10px;
+        padding:9px 12px;font-size:12px;line-height:1.6}
+  .why{background:#0a0f14;border:1px solid var(--line);border-radius:10px;padding:9px 12px;
+       font-size:12.5px;line-height:1.65}
+  .sep{height:1px;background:var(--line);margin:10px 0}
+  .note{color:var(--dim2);font-size:11px;line-height:1.6}
 </style>
 </head>
 <body>
+
 <header>
-  <div class="wrap hrow">
-    <div>
-      <h1>OPTION TRADE · <b>Omega Singularity Engine</b> <span class="tag gold">v{{version}}</span></h1>
-      <div class="sub">ข่าวจริงจากสำนักข่าวต่างประเทศ · โซ่ราคา CBOE จริง · สถิติย้อนหลัง 6 เดือนรายหุ้น · โอกาสชนะแบบมีช่วงความเชื่อมั่น 95%</div>
-    </div>
-    <div class="clocks">
-      <span class="pill"><span id="live" class="dot"></span><b id="statusTxt">กำลังโหลด…</b></span>
-      <span class="pill">UTC <b id="utc">–</b></span>
-      <span class="pill">New York <b id="ny">–</b></span>
-      <span class="pill">รีเฟรชใน <b id="cd">–</b> วิ</span>
-      <span class="pill">อัปเดตล่าสุด <b id="updated">–</b></span>
-    </div>
+  <div class="hbar">
+    <div class="brand">OMEGA <span class="g">SINGULARITY</span></div>
+    <span class="pill" id="pStatus"><span class="spin"></span> กำลังเชื่อมต่อ</span>
+    <span class="pill" id="pTime">ข้อมูล ณ —</span>
+    <span class="spacer"></span>
+    <button class="ghost" id="bNow">สแกนใหม่</button>
+    <a class="ghost" href="/logout">ออกจากระบบ</a>
   </div>
 </header>
 
-<div class="wrap">
+<main>
+  {% if using_default_password %}
+  <div class="banner warn" style="margin-top:14px">
+    <b>ยังใช้รหัสผ่านตั้งต้น</b> — ตั้งรหัสของคุณเองได้ที่ Render → Environment แล้วเพิ่ม
+    <span class="mono">SITE_PASSWORD</span> (แก้แล้วรีสตาร์ทบริการหนึ่งครั้ง) จนกว่าจะเปลี่ยน
+    คนที่รู้รหัสตั้งต้นนี้สามารถเข้าได้
+  </div>
+  {% endif %}
 
-  <div class="row" style="margin-top:14px">
-    <input type="text" id="q" placeholder="AAPL" maxlength="6" onkeydown="if(event.key==='Enter')goAnalyze()">
-    <button class="btn primary" onclick="goAnalyze()">วิเคราะห์หุ้นสหรัฐ</button>
-    <button class="btn" onclick="refreshAll(true)">รีเฟรชเดี๋ยวนี้</button>
-    <span class="muted tiny">พิมพ์ ticker แล้ว Enter — ระบบจะดึงราคา, ออปชันทั้งสาย, ข่าว, SEC และสถิติ 6 เดือนให้ทันที</span>
+  <div class="banner info" style="margin-top:12px">
+    ทุกตัวเลข “โอกาสชนะ” ในหน้านี้คือ<b>การนับจริง</b>จากประวัติราคาที่ย้อนหลัง
+    (ทดสอบสูตรเดียวกันทุกวัน แล้วนับว่ากี่รอบที่กำไรจริง) ไม่ใช่การคาดเดา ·
+    ราคาออปชันจาก CBOE เป็น<b>ข้อมูลล่าช้า</b>และแสดงเวลากำกับไว้ทุกจุด
   </div>
 
-  <div id="kpis" class="grid g4" style="margin-top:14px"></div>
-
-  <h2>Omega Guide · สัญญาที่ถูกและมีปริมาณสูง (สัปดาห์นี้)</h2>
-  <div id="guideNote" class="banner">เกณฑ์: พรีเมียม ≤ 3% ของราคาหุ้น และ ≤ $5 · ปริมาณ ≥ 100 หรือ OI ≥ 200 · Spread ≤ 25% · Delta 0.15–0.70 — จัดอันดับด้วยคะแนน Omega ที่ให้น้ำหนัก “โอกาสชนะ” เป็นอันดับหนึ่ง</div>
-  <div id="guide" class="grid g3" style="margin-top:10px"></div>
-
-  <h2>ตารางเปรียบเทียบรายหุ้น</h2>
-  <div class="scroll">
-    <table id="tickTable">
-      <thead><tr>
-        <th>หุ้น</th><th>ราคา</th><th>สัญญาณ</th><th>ฝั่ง</th><th>Strike ที่เลือก</th><th>หมดอายุ</th>
-        <th>พรีเมียม</th><th>โอกาสชนะ</th><th>ช่วง 95%</th><th>EV</th><th>คะแนน Omega</th>
-        <th>Tech</th><th>Flow</th><th>News</th><th>IV</th><th>สถิติ 6 ด.</th><th></th>
-      </tr></thead>
-      <tbody><tr><td colspan="17" class="muted">กำลังสแกน…</td></tr></tbody>
-    </table>
+  <div id="boot" class="banner" style="margin-top:12px">
+    <span class="spin"></span> กำลังเริ่มดึงข้อมูลจริงจาก CBOE / Yahoo / สำนักข่าว …
+    <div class="prog"><i id="pbar" style="width:0%"></i></div>
+    <div class="tiny dim" id="ptext" style="margin-top:6px">รอผลรอบแรก</div>
   </div>
 
-  <h2>สัญญาถูก+ปริมาณสูง ทั้งตลาด (Screener)</h2>
-  <div class="scroll tall">
-    <table id="screener">
-      <thead><tr>
-        <th>หุ้น</th><th>ชนิด</th><th>Strike</th><th>หมดอายุ</th><th>พรีเมียม</th><th>% ของราคา</th>
-        <th>โอกาสชนะ</th><th>จุดคุ้มทุน</th><th>ปริมาณ</th><th>OI</th><th>Spread</th><th>IV</th><th>Δ</th><th>EV%</th><th>คะแนน</th><th></th>
-      </tr></thead>
-      <tbody><tr><td colspan="16" class="muted">กำลังโหลด…</td></tr></tbody>
-    </table>
+  <div id="content" style="display:none">
+    <div class="kpis" id="kpis"></div>
+
+    <h2>คำตอบสั้น ๆ: ตอนนี้สัญญาไหนน่าเข้าที่สุด</h2>
+    <div class="note" style="margin-bottom:8px">
+      คัดจากทุกหุ้นในรายการ ทุกวันหมดอายุที่มีจริง — เรียงตามจำนวนรอบที่<b>ทำกำไรจริง</b>ในอดีต
+      โดยให้สัญญาที่กำไรเฉลี่ยติดลบลงไปอยู่ท้ายเสมอ (ชนะบ่อยแต่กำไรน้อยกว่าโหว่ = ไม่คุ้ม)
+    </div>
+    <div class="cards" id="picks"></div>
+
+    <h2>รายชื่อหุ้นที่ติดตาม</h2>
+    <div class="scroll tall">
+      <table>
+        <thead><tr>
+          <th>หุ้น</th><th>ราคา</th><th>สัญญาณ</th><th>ทิศ</th>
+          <th>สัญญาที่ดีสุด</th><th>หมดอายุ</th><th>โอกาสชนะ</th><th>กำไรเฉลี่ย</th>
+          <th>คะแนน</th><th></th>
+        </tr></thead>
+        <tbody id="watchBody"><tr><td colspan="10" class="dim">รอข้อมูล…</td></tr></tbody>
+      </table>
+    </div>
+
+    <h2>ทุกวันหมดอายุของแต่ละหุ้น</h2>
+    <div class="note" style="margin-bottom:8px">
+      ออปชันแต่ละตัวมีวันหมดอายุของมันเอง จึงแสดงตามวันจริงใน chain ไม่ได้แบ่งเป็น “3 วัน / 5 วัน” แบบเหมารวม
+    </div>
+    <div id="expiryBoard"></div>
+
+    <h2>ข่าวล่าสุดจากสำนักข่าว</h2>
+    <div id="newsBox" class="banner">รอข้อมูล…</div>
+
+    <div class="note" style="margin-top:22px">
+      ตัวเลขทั้งหมดคำนวณจากข้อมูลที่ดาวน์โหลดได้จริง ณ เวลาที่แสดง · ช่วงความเชื่อมั่นใช้จำนวนรอบที่
+      <b>เป็นอิสระต่อกันจริง</b> (หน้าต่างเวลาที่ซ้อนกันจะถูกนับลดตามสัดส่วน) · สถิติในอดีตไม่ได้รับประกันอนาคต
+    </div>
   </div>
-
-  <h2>สุขภาพแหล่งข่าวและผู้ให้ข้อมูล</h2>
-  <div id="srcSummary" class="row" style="margin-bottom:8px"></div>
-  <div class="scroll">
-    <table id="srcTable">
-      <thead><tr><th>สำนักข่าว / แหล่ง</th><th>โดเมน</th><th>ประเภท</th><th>ระดับความน่าเชื่อถือ</th><th>สถานะ</th><th>ข่าวที่ใช้</th><th>ตรวจล่าสุด (ชม. ที่แล้ว)</th><th>บันทึก</th></tr></thead>
-      <tbody><tr><td colspan="8" class="muted">กำลังตรวจ…</td></tr></tbody>
-    </table>
-  </div>
-
-  <h2>Scoreboard · ผลจริงย้อนหลังของระบบเอง</h2>
-  <div id="trackBox" class="banner">กำลังโหลดสถิติ…</div>
-
-  <h2>คำเตือนความเสี่ยง (อ่านก่อนใช้)</h2>
-  <div class="card tiny muted">
-    <p style="margin:0 0 6px"><b class="gold">เว็บนี้คือเครื่องมือวิเคราะห์ ไม่ใช่คำแนะนำการลงทุน</b> ตัวเลขทั้งหมดเป็น “ความน่าจะเป็น” จากแบบจำลอง (GBM / Bootstrap จากราคาจริง / Fat-tail / Lognormal จาก IV) ไม่ใช่การรับประกัน ระบบอาจผิดพลาดได้เสมอ</p>
-    <p style="margin:0 0 6px">ออปชันราคาต่ำมี “โอกาสหมดค่าเป็นศูนย์” สูงโดยธรรมชาติ — ค่า EV เป็นลบได้แม้โมเดลให้โอกาสชนะสูง เพราะกำหนดจ่ายไม่สมมาตร ควรกันเงินที่จะเสียได้ทั้งหมด และอย่าใส่เกิน 1–3% ของพอร์ตต่อดีล</p>
-    <p style="margin:0">ราคาออปชันจาก CBOE เป็นแบบ <b>ล่าช้า (delayed)</b> · ข้อมูลอาจคลาดเคลื่อนได้ · ตรวจสอบราคาจริงกับโบรกเกอร์ก่อนส่งคำสั่งทุกครั้ง · เวลาในตลาดสหรัฐคือ 21:30–04:00 น. (ไทย) ช่วงฤดูร้อน</p>
-  </div>
-
-  <footer>
-    Omega Singularity Engine v{{version}} · แหล่งข้อมูล: CBOE (โซ่ราคา+กรีกส์) · Yahoo Finance (ราคาย้อนหลัง) · Nasdaq (ราคาปัจจุบัน/งบ) · SEC EDGAR (เอกสารทางการ) · Stocktwits · RSS สำนักข่าวโดยตรง · AlphaVantage/NewsAPI (ถ้ามีคีย์) · ค่าทั้งหมดเพื่อการวิจัย
-  </footer>
-</div>
+</main>
 
 <dialog id="detail">
   <div class="dhead">
     <div>
-      <div id="dTitle" style="font-size:17px;font-weight:700">–</div>
-      <div id="dSub" class="tiny muted">–</div>
+      <div class="mono" id="dTitle" style="font-size:17px;font-weight:700">—</div>
+      <div class="tiny dim" id="dSub">—</div>
     </div>
-    <div class="row">
-      <button class="btn" onclick="detail.close()">ปิด</button>
-    </div>
+    <button class="x" onclick="document.getElementById('detail').close()">ปิด</button>
   </div>
-  <div class="dbody" id="dBody"><div class="muted"><span class="spin"></span> กำลังวิเคราะห์…</div></div>
+  <div class="dbody" id="dBody"></div>
 </dialog>
 
 <script>
-const REFRESH = {{refresh}};
-const CD = REFRESH;
-let lastScan = 0, cd = CD, scan = null;
-
-const f2 = (n,d)=> (n==null||isNaN(n)) ? '–' : Number(n).toFixed(d==null?2:d);
-const money = n => (n==null||isNaN(n)) ? '–' : '$'+Number(n).toFixed(2);
-const sgn = n => (n==null||isNaN(n)) ? '–' : (n>0?'+':'')+Number(n).toFixed(2);
-function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function pcol(v){ if(v==null) return 'dim'; if(v>=60) return 'up'; if(v>=50) return 'gold'; if(v>=40) return 'warn'; return 'down'; }
-function bar(v, lo, hi){
-  v = (v==null?0:Math.max(0,Math.min(100,v)));
-  const w = Math.max(0,Math.min(100,v));
-  const col = v>=60?'#2ecc71':v>=50?'#e3b341':v>=40?'#f0a020':'#ff5f56';
-  let ci='';
-  if(lo!=null&&hi!=null){
-    const l=Math.max(0,Math.min(100,lo)), h=Math.max(0,Math.min(100,hi));
-    ci = '<span class="ci" style="left:'+l+'%;width:'+Math.max(h-l,0.5)+'%"></span>';
-  }
-  return '<div class="bar"><i style="width:'+w+'%;background:'+col+'"></i>'+ci+'<span>'+f2(v,1)+'%</span></div>';
+/* ---------------------------------- utils --------------------------------- */
+const $ = s => document.querySelector(s);
+const money = v => (v==null||isNaN(v)) ? '—' : '$'+Number(v).toFixed(2);
+const num = (v,d=0) => (v==null||isNaN(v)) ? '—' : Number(v).toFixed(d);
+const pct = (v,d=1) => (v==null||isNaN(v)) ? '—' : Number(v).toFixed(d)+'%';
+const esc = s => String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const sgn = v => (v==null||isNaN(v)) ? '—' : (v>0?'+':'')+Number(v).toFixed(1);
+const pcol = v => v>=45?'up' : v>=35?'gold' : v>=25?'':'down';
+const ago = iso => {
+  if(!iso) return '—';
+  const s = (Date.now()-Date.parse(iso))/1000;
+  if(isNaN(s)) return '—';
+  if(s<60) return 'เมื่อสักครู่';
+  if(s<3600) return Math.floor(s/60)+' นาทีที่แล้ว';
+  if(s<86400) return Math.floor(s/3600)+' ชั่วโมงที่แล้ว';
+  return Math.floor(s/86400)+' วันที่แล้ว';
+};
+function bar(p,lo,hi){
+  const w = Math.max(0,Math.min(100,p||0));
+  const l = Math.max(0,Math.min(100,lo==null?w:lo));
+  const h = Math.max(0,Math.min(100,hi==null?w:hi));
+  return '<div class="bar" title="'+num(lo,1)+'–'+num(hi,1)+'%"><i style="width:'+w+'%"></i>'+
+         '<u style="left:'+l+'%"></u><u style="left:'+h+'%"></u></div>';
 }
-function dt(s){ if(!s) return '–'; try{ const d=new Date(s); return d.toLocaleString('th-TH',{hour12:false,timeZone:'Asia/Bangkok'}); }catch(e){ return s; } }
-function agoH(h){ if(h==null) return '–'; return h<1?'<1 ชม.':(h<24? h.toFixed(0)+' ชม.': (h/24).toFixed(1)+' วัน'); }
-
-function clock(){
-  const now = new Date();
-  utc.textContent = now.toISOString().substr(11,8);
-  try{ ny.textContent = now.toLocaleTimeString('en-GB',{timeZone:'America/New_York',hour12:false}); }catch(e){}
-  cd.textContent = Math.max(0,Math.round(cdleft()));
-  if(scan && scan.updated) updated.textContent = dt(scan.updated);
-}
-function cdleft(){
-  if(!lastScan) return CD;
-  const next = (lastScan + CD*1000 - Date.now())/1000;
-  return next>0? next : 0;
+function signifTag(s){
+  if(s==='มีนัยสำคัญ') return '<span class="tag green">มีนัยสำคัญ</span>';
+  if(s==='แย่กว่าตลาดชัดเจน') return '<span class="tag red">แย่กว่าตลาด</span>';
+  if(s==='ยังไม่ชัดเจน') return '<span class="tag grey">ยังไม่ชัดเจน</span>';
+  return '';
 }
 
-/* ---------------- scan ---------------- */
-async function refreshAll(force){
+/* ---------------------------------- state --------------------------------- */
+let SCAN = null, POLL = null, ITEMS = [];
+
+async function boot(){
+  try{
+    const r = await fetch('/api/boot',{cache:'no-store'});
+    if(r.status===401){ location.href='/login'; return; }
+    await tick();
+  }catch(e){ $('#pStatus').innerHTML = 'เชื่อมต่อไม่สำเร็จ'; }
+}
+
+async function tick(){
   try{
     const r = await fetch('/api/scan',{cache:'no-store'});
-    scan = await r.json();
-    renderScan();
-    live.className='dot on'; statusTxt.textContent='ออนไลน์';
+    if(r.status===401){ location.href='/login'; return; }
+    const j = await r.json();
+    SCAN = j; ITEMS = j.items || [];
+    render();
+    const prog = j.progress || {};
+    const done = prog.done||0, total = prog.total||0;
+    if(ITEMS.length && (!total || done>=total)) { clearInterval(POLL); POLL=null; }
+    else if(!POLL){ POLL = setInterval(tick, 5000); }
   }catch(e){
-    live.className='dot off'; statusTxt.textContent='เชื่อมต่อไม่ได้';
+    $('#pStatus').innerHTML = '<span class="down">เชื่อมต่อไม่ได้</span>';
   }
-  if(force||Date.now()-srcAt>300000) loadSources();
-  if(force||Date.now()-trkAt>120000) loadTrack();
 }
 
-function kp(label,val,cls){
-  return '<div class="card kpi"><span class="k">'+label+'</span><span class="v '+(cls||'')+'">'+val+'</span></div>';
-}
+function render(){
+  const it = ITEMS;
+  const prog = (SCAN&&SCAN.progress)||{};
+  const done = prog.done||0, total = prog.total||0;
 
-function renderScan(){
-  if(!scan) return;
-  const it = scan.items||[];
-  const done = (scan.progress&&scan.progress.done)||0, tot=(scan.progress&&scan.progress.total)||0;
+  // status
+  $('#pStatus').innerHTML = it.length
+    ? '<b class="up">'+it.length+'</b> หุ้นพร้อมใช้' + (total&&done<total?' · กำลังเติม '+(total-done)+'/'+total:'')
+    : '<span class="spin"></span> กำลังดึงข้อมูล';
+  $('#pTime').textContent = 'ข้อมูล ณ ' + (SCAN&&SCAN.updated ? new Date(SCAN.updated).toLocaleString('th-TH') : '—');
+
+  // boot / progress
   if(!it.length){
-    // A free instance restarts after idling, so the first visitor after a while
-    // finds an empty page while the first pass runs.  Show what is happening
-    // instead of a blank screen: a live bar, the ticker being worked on, and an
-    // explicit note that waiting is normal.
-    const pct = tot? Math.round(done/tot*100) : 0;
-    const cur = (scan.progress&&scan.progress.current)? scan.progress.current : '';
-    statusTxt.textContent = tot? ('กำลังสแกน '+done+'/'+tot) : 'กำลังเริ่มสแกน…';
-    kpis.innerHTML =
-      kp('สถานะ', tot? 'กำลังสแกน' : 'เริ่มต้นระบบ', 'gold') +
-      kp('คืบหน้า', done+' / '+(tot||'—')) +
-      kp('กำลังวิเคราะห์', cur||'—') +
-      kp('รอบสแกนล่าสุด', (scan.cycle_sec||0)+' วิ');
-    guide.innerHTML =
-      '<div class="banner" style="grid-column:1/-1">'+
-      '<b class="gold2">กำลังดึงข้อมูลจริงจากสำนักข่าวและตลาดออปชัน…</b>'+
-      '<div class="tiny dim" style="margin-top:6px">รอบแรกใช้เวลาราว 1–2 นาที (อินสแตนซ์ฟรีจะหลับเมื่อไม่มีคนใช้ '+
-      'แล้วตื่นใหม่ตอนคุณเปิดหน้า) · ระบบจะทยอยแสดงผลทันทีที่หุ้นแต่ละตัววิเคราะห์เสร็จ'+
-      (cur? ' · กำลังทำ: <b>'+esc(cur)+'</b>':'')+'</div>'+
-      '<div style="height:8px;background:rgba(255,255,255,.08);border-radius:4px;margin-top:10px;overflow:hidden">'+
-      '<div style="height:100%;width:'+pct+'%;background:var(--gold);transition:width .5s"></div></div>'+
-      '</div>';
+    $('#boot').style.display='';
+    $('#content').style.display='none';
+    const w = total ? Math.round(done/total*100) : 0;
+    $('#pbar').style.width = w+'%';
+    $('#ptext').textContent = total ? ('ดึงแล้ว '+done+' จาก '+total+' หุ้น') : 'กำลังเริ่มรอบแรก (cold start อาจใช้ 20–60 วินาที)';
     return;
   }
-  if(done<tot) statusTxt.textContent = 'สแกน '+done+'/'+tot;
-  const cheap = (scan.screener||[]).length;
-  const high = it.filter(x=>x.verdict==='HIGH'||x.verdict==='ULTIMATE').length;
-  const errs = (scan.errors||[]).length;
-  kpis.innerHTML =
-    kp('หุ้นในระบบ', it.length+' / '+(scan.universe||[]).length) +
-    kp('ดีลคุณภาพสูง', high, high?'up':'dim') +
-    kp('สัญญาถูก+ปริมาณสูง', cheap, cheap?'gold':'dim') +
-    kp('รอบสแกนล่าสุด', (scan.cycle_sec||0)+' วิ') +
-    kp('แหล่งที่ล้มเหลว', errs, errs?'down':'up') +
-    kp('ข่าวที่ดึงได้รวม', it.reduce((a,b)=>a+((b.news_detail&&b.news_detail.n)||0),0), 'gold');
-  lastScan = scan.updated? Date.parse(scan.updated) : Date.now();
+  $('#boot').style.display='none';
+  $('#content').style.display='';
 
-  // guide cards
-  const top = it.slice(0,6);
-  guide.innerHTML = top.map(r=>{
-    const b = r.best;
-    if(!b) return '';
-    return '<div class="pick '+(b.kind==='CALL'?'call':'put')+'">'+
-      '<div class="row" style="justify-content:space-between">'+
-        '<div><b style="font-size:16px">'+esc(r.ticker)+'</b> <span class="dim tiny">'+esc((r.name||'').substr(0,26))+'</span></div>'+
-        '<span class="tag '+(b.verdict==='ULTIMATE'?'gold':b.verdict==='HIGH'?'green':b.verdict==='WATCH'?'blue':'red')+'">'+b.verdict+'</span></div>'+
-      '<div class="row tiny dim" style="margin-top:3px"><span>ราคา '+money(r.spot)+'</span><span>·</span><span>'+esc(b.kind)+' $'+b.strike+'</span><span>·</span><span>หมดอายุ '+esc(b.expiry||'')+' ('+f2(b.dte,0)+' วัน)</span></div>'+
-      '<div class="big '+pcol(b.pop)+'" style="margin-top:6px">'+f2(b.pop,1)+'% <span class="tiny dim">โอกาสชนะ (นับจริง)</span></div>'+
-      '<div class="tiny dim">กำไรจริง '+(b.hist_win_count==null?'–':b.hist_win_count)+' จาก '+(b.hist_n||0)+' รอบย้อนหลัง · ช่วงความเชื่อมั่น 95% '+f2(b.pop_lo,1)+'–'+f2(b.pop_hi,1)+'%</div>'+
+  renderKpis(it);
+  renderPicks(it);
+  renderWatch(it);
+  renderExpiryBoard(it);
+  renderNews(it);
+}
+
+function renderKpis(it){
+  const totalC = it.reduce((a,x)=>{
+    const ex = x.expiries||{};
+    return a + Object.keys(ex).length;
+  },0);
+  const strong = it.reduce((a,x)=>{
+    const b = x.best||{}; return a + ((b.hist_avg_pnl||0)>0?1:0);
+  },0);
+  const errs = ((SCAN&&SCAN.errors)||[]).length;
+  $('#kpis').innerHTML =
+    kpi('หุ้นในรายการ', it.length) +
+    kpi('วันหมดอายุที่มีจริง', totalC) +
+    kpi('หุ้นที่มีกำไรเฉลี่ยจริง', strong, strong?'up':'down') +
+    kpi('รอบสแกนล่าสุด', ((SCAN&&SCAN.cycle_sec)||0)+' วิ') +
+    kpi('แหล่งข้อมูลล้มเหลว', errs, errs?'down':'up');
+}
+const kpi = (k,v,cls) => '<div class="kpi"><span class="k">'+esc(k)+'</span><span class="v '+(cls||'')+'">'+esc(v)+'</span></div>';
+
+/* every (ticker, expiry, side) with a pick, scored honestly */
+function allPicks(it){
+  const out = [];
+  it.forEach(x=>{
+    const ex = x.expiries||{};
+    Object.keys(ex).forEach(d=>{
+      const v = ex[d]||{};
+      ['call','put'].forEach(side=>{
+        const s = v[side];
+        if(!s) return;
+        out.push(Object.assign({}, s, {
+          ticker:x.ticker, side:side.toUpperCase(), expiry:d,
+          dte:v.dte, spot:x.spot, reason:v[side+'_reason']||''
+        }));
+      });
+    });
+  });
+  return out;
+}
+
+function renderPicks(it){
+  const all = allPicks(it);
+  // Rank by counted win rate, but never let a losing contract outrank a
+  // profitable one: winning often with a negative average is still losing money.
+  all.sort((a,b)=>{
+    const pa = (a.hist_avg_pnl||0)>0 ? 1:0, pb = (b.hist_avg_pnl||0)>0 ? 1:0;
+    if(pa!==pb) return pb-pa;
+    const sa = (a.edge_signif==='มีนัยสำคัญ')?1:0, sb=(b.edge_signif==='มีนัยสำคัญ')?1:0;
+    if(sa!==sb) return sb-sa;
+    return (b.pop||0)-(a.pop||0);
+  });
+  const top = all.slice(0,6);
+  if(!top.length){ $('#picks').innerHTML = '<div class="banner">ยังไม่มีสัญญาที่ผ่านเกณฑ์ในรอบนี้</div>'; return; }
+  $('#picks').innerHTML = top.map(s=>{
+    const c = s.side==='CALL' ? 'c':'p';
+    const good = (s.hist_avg_pnl||0)>0;
+    return '<div class="pick '+c+'">'+
+      '<div class="top"><div>'+
+        '<div class="tick">'+esc(s.ticker)+' <span class="'+(s.side==='CALL'?'call':'put')+'" style="font-size:12.5px">'+s.side+' $'+s.strike+'</span></div>'+
+        '<div class="tiny dim">หมดอายุ '+esc(s.expiry)+' · อีก '+num(s.dte,0)+' วัน · ราคาหุ้น '+money(s.spot)+'</div>'+
+      '</div>'+ signifTag(s.edge_signif) +'</div>'+
+      '<div class="big '+pcol(s.pop)+'">'+pct(s.pop)+' <span class="tiny dim" style="font-weight:400">โอกาสชนะ</span></div>'+
+      '<div class="tiny dim">นับจริง '+(s.hist_win_count!=null?s.hist_win_count:'—')+' / '+(s.hist_n||0)+
+        ' รอบ · ช่วง 95% '+num(s.pop_lo,1)+'–'+num(s.pop_hi,1)+'%</div>'+
       '<div class="sep"></div>'+
-      '<div class="tiny"><span class="dim">พรีเมียม</span> <b class="mono">'+money(b.premium)+'</b> <span class="dim">('+f2(b.premium_pct,2)+'% ของราคา)</span> '+
-      (b.cheap?'<span class="tag green">ถูก</span>':'<span class="tag warn">แพง</span>')+' '+
-      (b.liquid?'<span class="tag green">คล่อง</span>':'<span class="tag red">คล่องต่ำ</span>')+'</div>'+
-      '<div class="tiny dim">จุดคุ้มทุน '+money(b.breakeven)+' · กำไรจริง '+(b.hist_win_count==null?'–':b.hist_win_count)+' จาก '+(b.hist_n||0)+' รอบ'+((b.hist_avg_pnl==null)?'':' · เฉลี่ย '+money(b.hist_avg_pnl))+'</div>'+
-      '<div class="why tiny">'+esc((b.why&&b.why[0])||b.headline||'')+'</div>'+
-      '<button class="btn mini" onclick="openDetail(\''+r.ticker+'\')">ดูตาราง Strike ทั้งหมด →</button>'+
+      '<div class="tiny">พรีเมียม <b class="mono">'+money(s.premium)+'</b> · ต้องปิดถึง <b class="mono">'+money(s.breakeven)+'</b></div>'+
+      '<div class="tiny">กำไรเฉลี่ย <b class="mono '+(good?'up':'down')+'">'+money(s.hist_avg_pnl)+'</b> ต่อสัญญา'+
+        (s.hist_profit_factor!=null?' · กำไร/ขาดทุน '+num(s.hist_profit_factor,2)+' เท่า':'')+'</div>'+
+      '<div class="tiny dim">ครึ่งใหม่ '+pct(s.hist_recent_win)+' · ครึ่งเก่า '+pct(s.hist_older_win)+'</div>'+
+      '<button class="ghost" style="margin-top:8px" data-t="'+esc(s.ticker)+'">ดูรายละเอียด '+esc(s.ticker)+' →</button>'+
     '</div>';
-  }).join('') || '<div class="banner">ยังไม่มีดีลที่ผ่านเกณฑ์ในรอบนี้ — ลองรีเฟรชอีกครั้ง</div>';
+  }).join('');
+}
 
-  // ticker table
-  const tb = document.querySelector('#tickTable tbody');
-  tb.innerHTML = it.map(r=>{
-    const b = r.best;
-    const dir = r.signal>0.05?'CALL':r.signal<-0.05?'PUT':'กลาง';
+function renderWatch(it){
+  $('#watchBody').innerHTML = it.map(x=>{
+    const b = x.best||{};
+    const dir = x.signal>0.05?'CALL':x.signal<-0.05?'PUT':'กลาง';
+    const good = (b.hist_avg_pnl||0)>0;
     return '<tr>'+
-      '<td><b>'+esc(r.ticker)+'</b><div class="tiny dim">'+esc((r.name||'').substr(0,22))+'</div></td>'+
-      '<td class="mono">'+money(r.spot)+'</td>'+
-      '<td class="mono '+pcol(50+50*r.signal)+'">'+f2(r.signal*100,0)+'</td>'+
-      '<td><span class="tag '+(r.bias==='CALL'?'green':'red')+'">'+r.bias+'</span></td>'+
-      (b? '<td class="mono gold">'+esc(b.kind)+' $'+b.strike+'</td>'+
-          '<td class="tiny">'+esc(b.expiry||'')+' ('+f2(b.dte,0)+'ว)</td>'+
-          '<td class="mono">'+money(b.premium)+'</td>'+
-          '<td>'+bar(b.pop,b.pop_lo,b.pop_hi)+'</td>'+
-          '<td class="tiny mono">'+f2(b.pop_lo,0)+'–'+f2(b.pop_hi,0)+'%</td>'+
-          '<td class="mono '+(b.ev_pct>0?'up':'down')+'">'+f2(b.ev_pct,0)+'%</td>'+
-          '<td class="mono '+pcol(b.omega)+'">'+f2(b.omega,0)+'</td>'
-         : '<td colspan="8" class="dim">'+esc(r.error||'ไม่มีข้อมูล')+'</td>')+
-      '<td class="mono tiny">'+f2(r.tech_score,0)+'</td>'+
-      '<td class="mono tiny">'+f2(r.flow_score,0)+'</td>'+
-      '<td class="mono tiny">'+f2(r.news_score,0)+'</td>'+
-      '<td class="mono tiny">'+f2(r.atm_iv,0)+'%</td>'+
-      '<td class="mono tiny">'+f2(r.hist&&r.hist.avg_abs_move,1)+'%</td>'+
-      '<td><button class="btn mini" onclick="openDetail(\''+r.ticker+'\')">รายละเอียด</button></td>'+
+      '<td><b>'+esc(x.ticker)+'</b><div class="tiny dim">'+esc((x.name||'').substr(0,20))+'</div></td>'+
+      '<td class="mono">'+money(x.spot)+'</td>'+
+      '<td class="mono '+pcol(50+50*(x.signal||0))+'">'+num((x.signal||0)*100,0)+'</td>'+
+      '<td><span class="tag '+(dir==='CALL'?'green':dir==='PUT'?'red':'grey')+'">'+dir+'</span></td>'+
+      (b.kind
+        ? '<td class="mono"><span class="'+(b.kind==='CALL'?'call':'put')+'">'+b.kind+'</span> $'+b.strike+'</td>'+
+          '<td class="tiny">'+esc(b.expiry||'')+'<div class="dim">อีก '+num(b.dte,0)+' วัน</div></td>'+
+          '<td>'+bar(b.pop,b.pop_lo,b.pop_hi)+'<div class="tiny dim">'+num(b.pop,1)+'%</div></td>'+
+          '<td class="mono '+(good?'up':'down')+'">'+money(b.hist_avg_pnl)+'<div class="tiny dim">PF '+num(b.hist_profit_factor,2)+'</div></td>'+
+          '<td class="mono '+pcol(b.omega)+'">'+num(b.omega,0)+'</td>'
+        : '<td colspan="5" class="dim">'+esc(x.error||'ไม่มีข้อมูล')+'</td>')+
+      '<td><button class="ghost" data-t="'+esc(x.ticker)+'">เปิด</button></td>'+
     '</tr>';
   }).join('');
-
-  // screener
-  const sc = document.querySelector('#screener tbody');
-  const rows = (scan.screener||[]);
-  sc.innerHTML = rows.length? rows.map(c=>
-    '<tr>'+
-      '<td><b>'+esc(c.ticker)+'</b></td>'+
-      '<td><span class="tag '+(c.kind==='CALL'?'green':'red')+'">'+c.kind+'</span></td>'+
-      '<td class="mono">'+c.strike+'</td>'+
-      '<td class="tiny">'+esc(c.expiry||'')+'</td>'+
-      '<td class="mono">'+money(c.premium)+'</td>'+
-      '<td class="mono tiny">'+f2(c.premium_pct,2)+'%</td>'+
-      '<td>'+bar(c.pop,c.pop_lo,c.pop_hi)+'</td>'+
-      '<td class="mono tiny">'+money(c.breakeven)+'</td>'+
-      '<td class="mono tiny">'+(c.volume||0).toLocaleString()+'</td>'+
-      '<td class="mono tiny">'+(c.oi||0).toLocaleString()+'</td>'+
-      '<td class="mono tiny">'+f2(c.spread_pct,1)+'%</td>'+
-      '<td class="mono tiny">'+f2(c.iv,0)+'%</td>'+
-      '<td class="mono tiny">'+f2(c.delta,2)+'</td>'+
-      '<td class="mono tiny '+(c.ev_pct>0?'up':'down')+'">'+f2(c.ev_pct,0)+'%</td>'+
-      '<td class="mono tiny '+pcol(c.omega)+'">'+f2(c.omega,0)+'</td>'+
-      '<td><button class="btn mini" onclick="openDetail(\''+c.ticker+'\')">เปิด</button></td>'+
-    '</tr>').join('') : '<tr><td colspan="16" class="muted">ยังไม่มีสัญญาที่ผ่านเกณฑ์ถูก+ปริมาณสูงในรอบนี้</td></tr>';
 }
 
-/* ---------------- detail ---------------- */
-let detail;
-function openDetail(t){
-  detail.showModal();
-  dTitle.textContent = t;
-  dSub.textContent = 'กำลังดึงราคา ออปชัน ข่าว SEC และสถิติ 6 เดือน…';
-  dBody.innerHTML = '<div class="muted"><span class="spin"></span> กำลังวิเคราะห์ '+esc(t)+' …</div>';
-  fetch('/api/analyze/'+encodeURIComponent(t),{cache:'no-store'})
-    .then(r=>r.json())
-    .then(j=>{ if(j.error){ dBody.innerHTML='<div class="risk">'+esc(j.error)+'</div>'; dSub.textContent=''; return;} renderDetail(j); })
-    .catch(e=>{ dBody.innerHTML='<div class="risk">ดึงข้อมูลไม่สำเร็จ: '+esc(e.message)+'</div>'; });
+function renderExpiryBoard(it){
+  const rows = [];
+  it.forEach(x=>{
+    const ex = x.expiries||{};
+    Object.keys(ex).sort().forEach(d=>{
+      const v = ex[d]||{};
+      ['call','put'].forEach(side=>{
+        const s = v[side]; if(!s) return;
+        rows.push({ticker:x.ticker, side:side.toUpperCase(), exp:d, dte:v.dte, s:s});
+      });
+    });
+  });
+  if(!rows.length){ $('#expiryBoard').innerHTML='<div class="banner">ยังไม่มีข้อมูลวันหมดอายุ</div>'; return; }
+  rows.sort((a,b)=> (a.dte-b.dte) || a.ticker.localeCompare(b.ticker));
+  $('#expiryBoard').innerHTML =
+    '<div class="scroll tall"><table><thead><tr>'+
+      '<th>หมดอายุ</th><th>เหลือ</th><th>หุ้น</th><th>ฝั่ง</th><th>Strike</th><th>พรีเมียม</th>'+
+      '<th>โอกาสชนะ</th><th>ช่วง 95%</th><th>กำไรเฉลี่ย</th><th>สรุป</th></tr></thead><tbody>'+
+    rows.map(r=>{
+      const s=r.s, good=(s.hist_avg_pnl||0)>0;
+      return '<tr>'+
+        '<td class="mono tiny">'+esc(r.exp)+'</td>'+
+        '<td class="mono tiny">'+num(r.dte,0)+' ว</td>'+
+        '<td><b>'+esc(r.ticker)+'</b></td>'+
+        '<td><span class="'+(r.side==='CALL'?'call':'put')+'">'+r.side+'</span></td>'+
+        '<td class="mono">$'+s.strike+'</td>'+
+        '<td class="mono tiny">'+money(s.premium)+'</td>'+
+        '<td class="mono '+pcol(s.pop)+'">'+num(s.pop,1)+'%</td>'+
+        '<td class="mono tiny dim">'+num(s.pop_lo,0)+'–'+num(s.pop_hi,0)+'%</td>'+
+        '<td class="mono tiny '+(good?'up':'down')+'">'+money(s.hist_avg_pnl)+'</td>'+
+        '<td class="tiny">'+signifTag(s.edge_signif)+'</td>'+
+      '</tr>';
+    }).join('')+'</tbody></table></div>';
 }
 
-function strikeRows(rows, kind){
-  if(!rows||!rows.length) return '<tr><td colspan="13" class="muted">ไม่มีข้อมูล strike ในช่วงนี้</td></tr>';
-  return rows.map((s,i)=>{
-    const id = kind+'-'+i;
-    const up = kind==='CALL';
-    // the level that actually decides the trade: breakeven, not the strike
-    const dbe = s.breakeven/s.spot0 !== undefined ? null : null;
-    let distNote = f2(s.dist_pct,1)+'%';
-    return '<tr>'+
-      '<td><b class="mono">'+s.strike+'</b> <span class="tiny dim">'+distNote+'</span>'+
-        '<div class="tiny dim">คุ้มทุน '+money(s.breakeven)+'</div></td>'+
-      '<td class="mono">'+money(s.premium)+'<div class="tiny dim">'+f2(s.premium_pct,2)+'%</div></td>'+
-      '<td>'+bar(s.pop,s.pop_lo,s.pop_hi)+'<div class="tiny dim">'+f2(s.pop_lo,1)+'–'+f2(s.pop_hi,1)+'%'+
-        (s.pop_source==='จริง'?'':' <span style="color:#e6b34a">(แบบจำลอง)</span>')+'</div></td>'+
-      '<td class="mono">'+f2(s.p_itm,0)+'%</td>'+
-      '<td class="mono">'+f2(s.p_touch,0)+'%</td>'+
-      '<td class="mono up">'+(s.hist_win_count==null?'–':s.hist_win_count)+'/'+(s.hist_n||0)+
-        '<div class="tiny dim">'+f2(s.hist_win,0)+'% กำไร</div>'+
-        '<div class="tiny dim">'+((s.hist_avg_pnl==null)?'–':money(s.hist_avg_pnl))+' เฉลี่ย</div></td>'+
-      '<td class="mono tiny">'+(s.volume||0).toLocaleString()+' / '+(s.oi||0).toLocaleString()+'<div class="tiny dim">sp '+f2(s.spread_pct,1)+'%</div></td>'+
-      '<td class="mono tiny">'+f2(s.iv,0)+'%<div class="tiny dim">'+sgn(s.iv_vs_atm)+'</div></td>'+
-      '<td class="mono tiny">'+f2(s.delta,2)+'</td>'+
-      '<td class="mono tiny">'+f2(s.theta_bleed,1)+'%</td>'+
-      '<td class="mono '+(s.ev!=null&&s.ev>0?'up':'down')+'">'+money(s.ev)+'<div class="tiny dim">'+(s.ev_pct==null?'–':f2(s.ev_pct,0)+'%')+'</div></td>'+
-      '<td class="mono '+pcol(s.omega)+'">'+f2(s.omega,0)+'<div class="tiny dim">'+s.verdict+'</div></td>'+
-      '<td style="text-align:left"><button class="btn mini">ทำไม?</button></td>'+
-    '</tr>'+
-    '<tr id="w-'+id+'" style="display:none"><td colspan="13" style="text-align:left;white-space:normal;background:#0a0e14;padding:0">'+whyBlock(s)+'</td></tr>';
-  }).join('');
+function renderNews(it){
+  const items = [];
+  it.forEach(x=>{
+    const nd = x.news_detail||{};
+    (nd.items||[]).forEach(n=>items.push(Object.assign({ticker:x.ticker},n)));
+  });
+  items.sort((a,b)=>(a.h||0)-(b.h||0));
+  const top = items.slice(0,14);
+  if(!top.length){ $('#newsBox').innerHTML='<div class="dim">รอบนี้ยังไม่มีข่าวที่ดึงได้</div>'; return; }
+  $('#newsBox').innerHTML = top.map(n=>
+    '<div style="padding:6px 0;border-bottom:1px solid var(--line)">'+
+      '<span class="tag '+(n.c>0.1?'green':n.c<-0.1?'red':'grey')+'">'+esc(n.ticker)+'</span> '+
+      (n.url?'<a href="'+esc(n.url)+'" target="_blank" rel="noopener">'+esc(n.t)+'</a>':'<span>'+esc(n.t)+'</span>')+
+      '<div class="tiny dim">'+esc(n.s||'')+' · '+ago(n.h?new Date(Date.now()-n.h*3600e3).toISOString():null)+'</div>'+
+    '</div>').join('');
 }
 
-function whyBlock(s){
-  const w = (s.why||[]).map(x=>'<li>'+esc(x)+'</li>').join('');
-  const rk = (s.risks||[]).map(x=>'<li>'+esc(x)+'</li>').join('');
-  return '<div style="padding:6px 2px">'+
-    '<div class="gold" style="font-weight:600">'+esc(s.headline||'')+'</div>'+
-    '<div class="why"><b>ทำไม strike นี้:</b><ul class="clean">'+w+'</ul></div>'+
-    (rk?'<div class="risk"><b>ความเสี่ยง:</b><ul class="clean">'+rk+'</ul></div>':'')+
-    '<div class="split" style="margin-top:8px">'+
-      '<div class="card tiny"><b class="gold2">นับจริงจากประวัติราคา (ตัวเลขหลัก)</b>'+
-        '<div style="margin-top:5px">ใน <b class="mono">'+(s.hist_n||0)+'</b> รอบย้อนหลังที่ทดสอบสูตรนี้ (สัญญาระยะเดียวกัน จุดคุ้มทุนเดียวกัน):</div>'+
-        '<div>กำไรเมื่อหมดอายุ <b class="mono up" style="font-size:15px">'+(s.hist_win_count==null?'–':s.hist_win_count)+' / '+(s.hist_n||0)+' รอบ = '+(s.hist_win==null?'–':f2(s.hist_win,1)+'%')+'</b>'+
-        ' <span class="tiny dim">(ช่วงความเชื่อมั่น 95% '+(s.pop_lo==null?'–':f2(s.pop_lo,0)+'–'+f2(s.pop_hi,0)+'%')+')</span></div>'+
-        '<div>แตะระดับนี้ระหว่างทาง <b class="mono">'+f2(s.hist_touch,1)+'%</b> · มีมูลค่าเหลือ (ITM) ตอนหมดอายุ <b class="mono">'+f2(s.hist_itm,1)+'%</b></div>'+
-        '<div>กำไร/ขาดทุนจริงต่อสัญญา: เฉลี่ย <b class="mono '+((s.hist_avg_pnl||0)>0?'up':'down')+'">'+money(s.hist_avg_pnl)+'</b>'+
-        ' · กลาง '+money(s.hist_median_pnl)+' · ดีสุด '+money(s.hist_best_pnl)+' · แย่สุด '+money(s.hist_worst_pnl)+'</div>'+
-        '<div>กำไรทั้งชุด ÷ ขาดทุนทั้งชุด (profit factor) <b class="mono '+((s.hist_profit_factor||0)>=1?'up':'down')+'">'+(s.hist_profit_factor==null?'–':f2(s.hist_profit_factor,2))+'</b>'+
-        ((s.hist_profit_factor!=null&&s.hist_profit_factor<1)?' <span class="tiny dim">(ต่ำกว่า 1 = สูตรนี้ขาดทุนสุทธิเมื่อถือยาว)</span>':'')+'</div>'+
-        '<div>ครึ่งหลังของข้อมูล (ใหม่สุด) ชนะ '+(s.hist_recent_win==null?'–':f2(s.hist_recent_win,1)+'%')+' จาก '+(s.hist_recent_n||0)+' รอบ · ครึ่งแรกชนะ '+(s.hist_older_win==null?'–':f2(s.hist_older_win,1)+'%')+'</div>'+
-      '</div>'+
-      '<div class="card tiny"><b class="gold2">เทียบกับแบบจำลอง (อ้างอิงเท่านั้น ไม่ใช่ตัวตัดสิน)</b>'+
-        '<div style="margin-top:5px">แบบจำลองให้ <b class="mono">'+(s.model_pop==null?'–':f2(s.model_pop,1)+'%')+'</b>'+
-        ' <span class="tiny dim">(ช่วง '+f2(s.model_pop_lo,0)+'–'+f2(s.model_pop_hi,0)+'%)</span></div>'+
-        '<div class="dim">ส่วนต่าง สถิติจริง − แบบจำลอง: <b class="'+((s.hist_edge||0)>0?'up':'down')+'">'+(s.hist_edge==null?'–':sgn(s.hist_edge)+' จุด')+'</b>'+
-        ((s.hist_edge==null)?'':((s.hist_edge>0)?' (ของจริงดีกว่าที่โมเดลคิด)':' (ของจริงแย่กว่าที่โมเดลคิด)'))+'</div>'+
-        '<div class="grid g2 tiny" style="margin-top:6px">'+
-          '<div class="card kpi"><span class="k">Lognormal (IV ตลาด)</span><span class="v mono">'+f2(s.p_market,1)+'%</span></div>'+
-          '<div class="card kpi"><span class="k">Bootstrap ราคาจริง</span><span class="v mono">'+f2(s.p_boot,1)+'%</span><span class="tiny dim">'+f2(s.p_boot_lo,0)+'–'+f2(s.p_boot_hi,0)+'%</span></div>'+
-          '<div class="card kpi"><span class="k">Fat-tail (t)</span><span class="v mono">'+f2(s.p_fat,1)+'%</span></div>'+
-          '<div class="card kpi"><span class="k">Monte-Carlo GBM</span><span class="v mono">'+f2(s.p_mc,1)+'%</span></div>'+
-        '</div>'+
-        '<div style="margin-top:5px">ราคาแกว่งเฉลี่ย '+f2(s.hist_avg_move,1)+'% · 90% ของรอบไม่เกิน '+f2(s.hist_p90_move,1)+'% · แรงสุด '+f2(s.hist_best,1)+'% / แย่สุด '+f2(s.hist_worst,1)+'%</div>'+
-        '<div>ปิดเหนือกว่า strike นี้ ' + f2(s.days_above,1)+'% ของวัน · ใต้กว่า '+f2(s.days_below,1)+'%</div>'+
-      '</div>'+
-      '<div class="card tiny"><b class="gold2">ตัวเลขการซื้อขาย</b>'+
-        '<div style="margin-top:5px">Bid/Ask <span class="mono">'+money(s.bid)+' / '+money(s.ask)+'</span> · Spread <span class="mono">'+f2(s.spread_pct,1)+'%</span></div>'+
-        '<div>Greek: Δ <span class="mono">'+f2(s.delta,3)+'</span> · Γ <span class="mono">'+f2(s.gamma,4)+'</span> · Θ <span class="mono">'+f2(s.theta,3)+'</span> · Vega <span class="mono">'+f2(s.vega,3)+'</span></div>'+
-        '<div>Theta กินพรีเมียม '+f2(s.theta_bleed,1)+'%/วัน · จุดคุ้มทุน <span class="mono">'+money(s.breakeven)+'</span></div>'+
-        '<div>มูลค่ายุติธรรมที่โมเดลให้ <span class="mono gold">'+money(s.fair_value)+'</span> vs ราคาตลาด <span class="mono">'+money(s.premium)+'</span> → ส่วนต่าง <span class="mono '+(s.edge>0?'up':'down')+'">'+money(s.edge)+'</span></div>'+
-        '<div>โอกาสหมดค่าเป็นศูนย์ '+f2(s.p_zero,1)+'% · กำไรเฉลี่ยเมื่อชนะ '+money(s.avg_win)+' ('+f2(s.ll_ratio,1)+' เท่าของพรีเมียม)</div>'+
-        '<div>ความน่าเชื่อถือของข้อมูลชุดนี้ <b class="mono">'+f2(s.reliability,0)+'/100</b></div>'+
-      '</div>'+
-    '</div>'+
-  '</div>';
-}
+/* --------------------------------- detail --------------------------------- */
+document.addEventListener('click', e=>{
+  const b = e.target.closest('[data-t]');
+  if(!b) return;
+  openDetail(b.getAttribute('data-t'));
+});
+$('#bNow').addEventListener('click', async ()=>{
+  try{ await fetch('/api/scan/now',{cache:'no-store'}); }catch(e){}
+  if(!POLL) POLL = setInterval(tick,5000);
+  setTimeout(tick, 800);
+});
 
-function horizonSide(s, cls, label){
-  if(!s) return '<div class="tiny dim" style="margin:4px 0">ไม่พบ '+label+' ที่มีสภาพคล่องพอ</div>';
-  const win = s.kind==='CALL'?'call':'put';
-  return '<div class="card" style="margin:6px 0;padding:9px;border-left:3px solid '+(win==='call'?'var(--green,#2ecc71)':'var(--red,#e74c3c)')+'">'+
-    '<div class="row" style="justify-content:space-between;align-items:center">'+
-      '<b class="'+win+'">'+label+' $'+s.strike+'</b>'+
-      '<span class="tag '+(s.verdict==='ULTIMATE'?'gold':s.verdict==='HIGH'?'green':'blue')+'">'+esc(s.verdict)+' '+f2(s.omega,0)+'</span>'+
-    '</div>'+
-    '<div class="big '+pcol(s.pop)+'" style="font-size:22px">'+f2(s.pop,1)+'% <span class="tiny dim">โอกาสชนะ (นับจริง)</span></div>'+
-    '<div class="tiny dim">ช่วงความเชื่อมั่น 95% '+f2(s.pop_lo,1)+'–'+f2(s.pop_hi,1)+'% · ชนะ '+(s.hist_win_count==null?'–':s.hist_win_count)+' จาก '+(s.hist_n||0)+' รอบจริง</div>'+
-    '<div class="tiny" style="margin-top:4px">พรีเมียม <b class="mono">'+money(s.premium)+'</b> · ต้องปิดให้ถึง <b class="mono">'+money(s.breakeven)+'</b></div>'+
-    '<div class="tiny dim">กำไรเฉลี่ยต่อสัญญา <b class="mono '+((s.hist_avg_pnl||0)>0?'up':'down')+'">'+money(s.hist_avg_pnl)+'</b> · ครึ่งใหม่ชนะ '+(s.hist_recent_win==null?'–':f2(s.hist_recent_win,0)+'%')+' / ครึ่งเก่าชนะ '+(s.hist_older_win==null?'–':f2(s.hist_older_win,0)+'%')+'</div>'+
-    (s.cheap?'':'<div class="tiny" style="color:#e6b34a">พรีเมียมยังไม่ถูกตามเกณฑ์</div>')+
-  '</div>';
-}
-
-function horizonPanel(r){
-  const hz = r.horizons||{};
-  const keys = Object.keys(hz).map(Number).filter(n=>!isNaN(n)).sort((a,b)=>a-b);
-  if(!keys.length) return '<div class="dim tiny">ยังไม่มีข้อมูลตามช่วงเวลา</div>';
-  return '<div class="grid g3">'+keys.map(k=>{
-    const v = hz[String(k)]||hz[k];
-    if(!v || v.error) return '<div class="card"><b class="gold2">'+k+' วัน</b><div class="tiny dim">'+esc((v&&v.error)||'ไม่มีข้อมูล')+'</div></div>';
-    const win = v.winner==='CALL'?'call':'put';
-    return '<div class="card">'+
-      '<div class="row" style="justify-content:space-between;align-items:center">'+
-        '<b class="gold2">'+k+' วัน</b>'+
-        '<span class="tag '+(win==='call'?'green':'red')+'">'+v.winner+' ได้เปรียบ</span>'+
-      '</div>'+
-      '<div class="tiny dim">หมดอายุ '+esc(v.expiry||'')+' (อีก '+f2(v.dte,0)+' วัน) · ตลาดคาดแกว่ง ±'+money(v.expected_move)+'</div>'+
-      (v.note?'<div class="tiny" style="color:#e6b34a;margin-top:3px">'+esc(v.note)+'</div>':'')+
-      horizonSide(v.call,'call','CALL')+
-      horizonSide(v.put,'put','PUT')+
-      '<div class="tiny dim" style="margin-top:5px"><b>CALL ทำไม:</b> '+esc(v.call_reason||'')+'</div>'+
-      '<div class="tiny dim" style="margin-top:3px"><b>PUT ทำไม:</b> '+esc(v.put_reason||'')+'</div>'+
-    '</div>';
-  }).join('')+'</div>';
+async function openDetail(t){
+  const dlg = $('#detail');
+  $('#dTitle').textContent = t;
+  $('#dSub').textContent = 'กำลังดึงราคา ออปชัน และข่าวจริง…';
+  $('#dBody').innerHTML = '<div class="dim"><span class="spin"></span> กำลังวิเคราะห์ '+esc(t)+' …</div>';
+  if(!dlg.open) dlg.showModal();
+  try{
+    const r = await fetch('/api/analyze/'+encodeURIComponent(t),{cache:'no-store'});
+    const j = await r.json();
+    if(j.error){ $('#dBody').innerHTML='<div class="risk">'+esc(j.error)+'</div>'; $('#dSub').textContent=''; return; }
+    window._D = j;
+    renderDetail(j);
+  }catch(err){
+    $('#dBody').innerHTML='<div class="risk">ดึงข้อมูลไม่สำเร็จ: '+esc(err.message)+'</div>';
+  }
 }
 
 function renderDetail(r){
-  dTitle.textContent = r.ticker + ' · ' + (r.name||'');
-  dSub.innerHTML = 'ราคา <b class="mono">'+money(r.spot)+'</b> ('+esc(r.spot_source||'')+') · IV '+f2(r.atm_iv,1)+'% · '+
-    'ความผันผวนจริง 6 ด. '+f2(r.sigma_hist,1)+'% · อัปเดต '+dt(r.chain_ts);
-  const g = (r.guide||[]).map(x=>'<li>'+esc(x)+'</li>').join('');
-  const bc = r.best_call, bp = r.best_put;
+  $('#dTitle').textContent = r.ticker + ' · ' + (r.name||'');
+  $('#dSub').innerHTML = 'ราคา <b class="mono">'+money(r.spot)+'</b> ('+esc(r.spot_source||'')+') · '+
+    'IV '+num(r.atm_iv,1)+'% · ความผันผวนจริง '+num(r.sigma_hist,1)+'% · ข้อมูลออปชัน ณ '+
+    (r.chain_ts?new Date(r.chain_ts).toLocaleString('th-TH'):'—');
 
-  function pickCard(s, cls, label){
-    if(!s) return '<div class="pick '+cls+'"><div class="dim">ไม่มีข้อมูล '+label+'</div></div>';
-    return '<div class="pick '+cls+'">'+
-      '<div class="row" style="justify-content:space-between"><b class="'+cls+'">'+label+' $'+s.strike+'</b><span class="tag '+(s.verdict==='ULTIMATE'?'gold':s.verdict==='HIGH'?'green':'blue')+'">'+s.verdict+' '+f2(s.omega,0)+'</span></div>'+
-      '<div class="big '+pcol(s.pop)+'">'+f2(s.pop,1)+'% <span class="tiny dim">โอกาสชนะ (นับจริงจากประวัติ)</span></div>'+
-      '<div class="tiny dim">ในช่วง '+(s.hist_n||0)+' รอบจริง กำไร '+(s.hist_win_count==null?'–':s.hist_win_count)+' รอบ · ช่วงความเชื่อมั่น 95% '+f2(s.pop_lo,1)+'–'+f2(s.pop_hi,1)+'%</div>'+
-      '<div class="tiny" style="margin-top:5px">พรีเมียม <b class="mono">'+money(s.premium)+'</b> · คุ้มทุน <b class="mono">'+money(s.breakeven)+'</b> · EV '+money(s.ev)+' ('+f2(s.ev_pct,0)+'%)</div>'+
-      '<div class="tiny dim">กำไรเฉลี่ยต่อสัญญาจริง <b class="mono '+((s.hist_avg_pnl||0)>0?'up':'down')+'">'+money(s.hist_avg_pnl)+'</b> · profit factor '+(s.hist_profit_factor==null?'–':f2(s.hist_profit_factor,2))+' · ครึ่งใหม่ชนะ '+(s.hist_recent_win==null?'–':f2(s.hist_recent_win,0)+'%')+'</div>'+
-      '<div class="why tiny"><ul class="clean">'+(s.why||[]).slice(0,3).map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></div>'+
-    '</div>';
-  }
+  const ex = r.expiries||{};
+  const dates = Object.keys(ex).sort((a,b)=>(ex[a].dte||0)-(ex[b].dte||0));
+  window._EX = ex; window._DATES = dates; window._SEL = dates[0]||null;
 
-  const ms = (r.move_stats||[]).map(m=>
-    '<tr><td>±'+m.move+'%</td><td class="mono up">'+f2(m.up,1)+'%</td><td class="mono down">'+f2(m.down,1)+'%</td>'+
-    '<td class="mono">'+f2(m.finish_up,1)+'%</td><td class="mono">'+f2(m.finish_down,1)+'%</td></tr>').join('');
+  let html = '';
+  html += '<div class="banner tiny">คลิกวันหมดอายุเพื่อดูคำตอบของวันนั้น — แต่ละวันคำนวณจากระยะเวลาจริงของมันเอง</div>';
+  html += '<div class="tabs" id="exTabs">'+dates.map((d,i)=>
+      '<div class="tab'+(i===0?' on':'')+'" data-ex="'+esc(d)+'">'+
+        esc(d)+' <span class="dim">· '+num(ex[d].dte,0)+' วัน</span></div>').join('')+'</div>';
+  html += '<div id="exBody"></div>';
 
-  const news = ((r.news_detail||{}).items||[]).map(n=>
-    '<div style="margin:6px 0"><span class="tag '+(n.c>0.1?'green':n.c<-0.1?'red':'')+'">'+f2(n.c,2)+'</span> '+
-    '<span class="tiny dim">'+esc(n.s||'')+' · '+agoH(n.h)+' · '+esc(n.depth||'')+'</span><br>'+
-    (n.url?'<a href="'+esc(n.url)+'" target="_blank" rel="noopener">'+esc(n.t)+'</a>':'<span>'+esc(n.t)+'</span>')+'</div>').join('') ||
-    '<div class="dim">ไม่พบข่าวในรอบนี้</div>';
+  html += '<h3>ตาราง Strike · หมดอายุ '+esc(r.expiry||'')+'</h3>';
+  html += '<div class="note" style="margin-bottom:6px">วันหมดอายุที่ระบบเลือกให้เป็นค่ากลาง (ใกล้ '+num(r.n_days,0)+' วันทำการ) — เป็นตารางเต็มของวันนั้น</div>';
+  html += '<div class="scroll tall"><table><thead><tr>'+
+    '<th>Strike</th><th>พรีเมียม</th><th>โอกาสชนะ</th><th>นับจริง</th><th>กำไรเฉลี่ย</th>'+
+    '<th>ปริมาณ/OI</th><th>Spread</th><th>Δ</th><th>คะแนน</th></tr></thead><tbody>'+
+    strikeRows((r.calls||[]).concat(r.puts||[]))+'</tbody></table></div>';
 
-  const filings = (((r.news_detail||{}).filings)||[]).map(f=>
-    '<div class="tiny" style="margin:4px 0"><span class="tag gold">'+esc(f.form)+'</span> '+esc(f.date||'')+' · '+agoH(f.age_h)+' · <a href="'+esc(f.url)+'" target="_blank" rel="noopener">เปิดเอกสาร SEC</a> · '+esc(f.title||'').substr(0,90)+'</div>').join('') || '<div class="dim tiny">ไม่มีเอกสาร SEC ในช่วงนี้</div>';
+  html += '<h3>ข่าวจริงจากสำนักข่าว ('+((r.news_detail||{}).n||0)+' ข่าว)</h3>';
+  html += '<div class="scroll" style="max-height:280px;padding:10px 12px">'+newsBlock(r)+'</div>';
 
-  const st = (r.flow||{});
-  const tech = (r.tech||{});
-  const hot = (st.hot||[]).map(h=>'<span class="tag '+(h.kind==='CALL'?'green':'red')+'">'+h.kind+' '+h.strike+' · '+(h.volume||0).toLocaleString()+' สัญญา</span>').join(' ');
+  html += '<h3>สถิติการเคลื่อนไหวของ '+esc(r.ticker)+'</h3>';
+  html += moveTable(r);
 
-  dBody.innerHTML =
-    '<div class="card"><b class="gold2">สรุปสัปดาห์นี้</b><ul class="clean tiny">'+g+'</ul></div>'+
+  html += '<div class="risk" style="margin-top:14px">ตัวเลข “โอกาสชนะ” และ “กำไรเฉลี่ย” คือการนับจริงจากประวัติ ไม่ใช่การรับประกัน · '+
+          'ราคาออปชันเป็นข้อมูลล่าช้าจาก CBOE · ตรวจสอบราคาจริงที่โบรกเกอร์ก่อนส่งคำสั่งทุกครั้ง</div>';
 
-    '<h3>คำตอบตรง ๆ: CALL ชนะที่ strike ไหน · PUT ชนะที่ strike ไหน</h3>'+
-    '<div class="split">'+pickCard(bc,'call','CALL')+pickCard(bp,'put','PUT')+'</div>'+
-    '<div class="card" style="margin-top:10px"><b class="gold2">คำตอบสำหรับสัปดาห์นี้</b><ul class="clean tiny">'+
-      (r.answer||[]).map(x=>'<li>'+esc(x)+'</li>').join('')+
-    '</ul></div>'+
-    '<div class="banner tiny" style="margin-top:8px">'+
-      (bc&&bp? ('CALL ให้โอกาสชนะ '+f2(bc.pop,1)+'% ขณะที่ PUT ให้ '+f2(bp.pop,1)+'% → '+
-        (bc.pop>=bp.pop? 'ฝั่ง CALL มีความน่าจะเป็นสูงกว่า' : 'ฝั่ง PUT มีความน่าจะเป็นสูงกว่า')+
-        ' · อย่าลืมว่า “โอกาสชนะสูง” ไม่ได้แปลว่า “คุ้มค่า” เสมอ เพราะจุดคุ้มทุนห่างจากราคาปัจจุบันไม่เท่ากัน') : 'ข้อมูลไม่พอ')+
+  $('#dBody').innerHTML = html;
+  renderExpiry();
+  $('#exTabs').addEventListener('click', e=>{
+    const t = e.target.closest('[data-ex]'); if(!t) return;
+    window._SEL = t.getAttribute('data-ex');
+    document.querySelectorAll('#exTabs .tab').forEach(x=>x.classList.toggle('on', x===t));
+    renderExpiry();
+  });
+}
+
+function renderExpiry(){
+  const ex = window._EX||{}, d = window._SEL;
+  const v = ex[d];
+  const box = $('#exBody'); if(!box) return;
+  if(!v){ box.innerHTML='<div class="banner">ไม่มีข้อมูลวันนี้</div>'; return; }
+
+  box.innerHTML =
+    '<div class="banner tiny" style="margin-bottom:8px">'+
+      'หมดอายุ <b class="mono">'+esc(v.expiry)+'</b> · '+esc(v.weekday||'')+' · อีก <b>'+num(v.dte,0)+'</b> วัน'+
+      ' · ตลาดคาดแกว่ง ±'+money(v.expected_move)+' ('+money(v.em_low)+' – '+money(v.em_high)+')'+
+      ' · ใช้ความผันผวน '+num(v.sigma,1)+'%'+
     '</div>'+
-
-    '<h3>เลือกตามเวลาที่คุณจะถือ: CALL/PUT strike ไหนโอกาสชนะสูงสุด (3 / 5 / 10 วัน)</h3>'+
-    horizonPanel(r)+
-    '<div class="tiny dim" style="margin-top:6px">อ่านอย่างไร: แต่ละช่องคือสัญญาที่<b>โอกาสชนะสูงสุด</b>ในช่วงเวลานั้น (ต้องมีพรีเมียมถูกและมีปริมาณจริง) · '+
-    'ตัวเลขโอกาสชนะคือ<b>การนับจริง</b>จากประวัติราคาที่ดาวน์โหลดมา ทดสอบสูตรเดียวกัน (strike + จุดคุ้มทุน + ระยะเวลาเดียวกัน) ในทุกวันย้อนหลัง · ถ้าโซ่ตัวเลือกไม่มีวันหมดอายุตรงกับที่ขอ ระบบจะใช้ตัวที่ใกล้ที่สุดและกำกับไว้</div>'+
-
-    '<h3>ตลาดคาดว่าจะแกว่งแค่ไหนใน '+f2(r.dte,0)+' วัน</h3>'+
-    '<div class="grid g4">'+
-      '<div class="card kpi"><span class="k">Expected Move</span><span class="v mono">±'+money(r.expected_move)+'</span><span class="tiny dim">'+money(r.em_low)+' – '+money(r.em_high)+'</span></div>'+
-      '<div class="card kpi"><span class="k">ความผันผวนที่ใช้คำนวณ</span><span class="v mono">'+f2(r.sigma_model,1)+'%</span><span class="tiny dim">IV '+f2(r.atm_iv,1)+'% / จริง '+f2(r.sigma_hist,1)+'%</span></div>'+
-      '<div class="card kpi"><span class="k">IV Rank</span><span class="v mono">'+f2(r.iv_rank,0)+'</span><span class="tiny dim">'+(r.regime&&r.regime.iv_tag||'')+' · VRP '+sgn(r.vrp)+' จุด</span></div>'+
-      '<div class="card kpi"><span class="k">แนวโน้ม</span><span class="v">'+esc((r.regime&&r.regime.trend)||'–')+'</span><span class="tiny dim">ADX '+f2(tech.adx,1)+' · RSI '+f2(tech.rsi,1)+(tech.squeeze?' · Bollinger บีบ':'')+'</span></div>'+
-    '</div>'+
-
-    '<h3>สถิติจริง 6 เดือนของ '+esc(r.ticker)+' ('+f2(r.n_days,0)+' วันทำการ · '+(r.hist&&r.hist.n||0)+' รอบ)</h3>'+
-    '<div class="scroll tall"><table><thead><tr><th>ขนาดการเคลื่อนไหว</th><th>ขึ้นไปแตะ (ระหว่างทาง)</th><th>ลงไปแตะ (ระหว่างทาง)</th><th>ปิดบวกเกิน</th><th>ปิดลบเกิน</th></tr></thead><tbody>'+(ms||'<tr><td colspan="5" class="dim">ไม่มีสถิติ</td></tr>')+'</tbody></table></div>'+
-    '<div class="tiny dim" style="margin-top:4px">อ่านง่าย ๆ: “ขึ้นไปแตะ +5%” = ใน 6 เดือนที่ผ่านมา ถ้าเข้าซื้อ ณ วันใดวันหนึ่ง มีกี่เปอร์เซ็นต์ของรอบที่ราคาไต่ขึ้นแตะ +5% ได้ภายใน '+f2(r.n_days,0)+' วันทำการ</div>'+
-
-    '<h3>ตาราง Strike · หมดอายุ '+esc(r.expiry||'')+' (อีก '+f2(r.dte,0)+' วัน)</h3>'+
-    '<div class="tabs"><div class="tab on" id="tabC" onclick="switchTab(\'CALL\')">CALL (แทงขึ้น)</div><div class="tab" id="tabP" onclick="switchTab(\'PUT\')">PUT (แทงลง)</div></div>'+
-    '<div class="scroll tall"><table id="stk"><thead><tr>'+
-      '<th>Strike / จุดคุ้มทุน</th><th>พรีเมียม</th><th>โอกาสชนะ (นับจริง · 95%)</th><th>จบ ITM</th><th>แตะระดับ Strike</th><th>กำไรจริงกี่รอบ / เฉลี่ย</th>'+
-      '<th>ปริมาณ / OI</th><th>IV</th><th>Δ</th><th>Θ/วัน</th><th>EV</th><th>คะแนน</th><th></th>'+
-    '</tr></thead><tbody id="stkBody">'+strikeRows(r.calls,'CALL')+'</tbody></table></div>'+
-    '<div class="tiny dim" style="margin-top:5px">วิธีอ่าน (สำคัญ): <b>จุดคุ้มทุน (breakeven)</b> คือราคาที่ต้องไปให้ถึงตอนหมดอายุจึงจะกำไร ไม่ใช่ตัวเลข Strike · '+
-    '<b>โอกาสชนะ</b> = ตัวเลขที่<b>นับจริง</b>จากประวัติราคาที่ดาวน์โหลดมา ทดสอบสูตรเดียวกัน (strike เดียวกัน จุดคุ้มทุนเดียวกัน ระยะเวลาเดียวกัน) ในทุกวันย้อนหลัง แล้วนับว่ากี่รอบที่กำไรจริง — '+
-    'พร้อมช่วงความเชื่อมั่น 95% แบบ Wilson · <b>จบ ITM</b> = มีมูลค่าเหลือตอนหมดอายุ (นับจริง) · <b>แตะระดับ Strike</b> = ราคาไปแตะตัว strike ก่อนหมดอายุ (ไม่เท่ากับกำไร) · '+
-    '<b>กำไรจริงกี่รอบ / เฉลี่ย</b> = จำนวนรอบที่กำไรจริง และกำไร/ขาดทุนเฉลี่ยต่อสัญญาเป็นดอลลาร์</div>'+
-
-    '<div class="split" style="margin-top:14px">'+
-      '<div class="card"><b class="gold2">อินดิเคเตอร์เทคนิค</b>'+
-        '<div class="grid g4 tiny" style="margin-top:6px">'+
-          '<div class="card kpi"><span class="k">RSI(14)</span><span class="v mono">'+f2(tech.rsi,1)+'</span></div>'+
-          '<div class="card kpi"><span class="k">MACD hist</span><span class="v mono">'+f2(tech.macd_hist,3)+'</span></div>'+
-          '<div class="card kpi"><span class="k">ADX / +DI / -DI</span><span class="v mono">'+f2(tech.adx,1)+' / '+f2(tech.pdi,1)+' / '+f2(tech.mdi,1)+'</span></div>'+
-          '<div class="card kpi"><span class="k">Stoch %K</span><span class="v mono">'+f2(tech.stoch,1)+'</span></div>'+
-          '<div class="card kpi"><span class="k">EMA 9/21/50</span><span class="v mono" style="font-size:13px">'+f2(tech.ema9,2)+' / '+f2(tech.ema21,2)+' / '+f2(tech.ema50,2)+'</span></div>'+
-          '<div class="card kpi"><span class="k">ATR%</span><span class="v mono">'+f2(tech.atr_pct,2)+'%</span></div>'+
-          '<div class="card kpi"><span class="k">ตำแหน่งในรอบ 52 สัปดาห์</span><span class="v mono">'+f2(tech.pos52,0)+'%</span></div>'+
-          '<div class="card kpi"><span class="k">โมเมนตัม 1/3 เดือน</span><span class="v mono">'+f2(tech.mom21,1)+'% / '+f2(tech.mom63,1)+'%</span></div>'+
-        '</div>'+
-        '<div class="tiny dim" style="margin-top:6px">Bollinger: ล่าง '+f2(tech.bb_lower,2)+' / บน '+f2(tech.bb_upper,2)+' (ตำแหน่ง '+f2(tech.pb,2)+') · แรงกว่า SPY '+sgn(tech.rs_spy)+'% · ไดเวอร์เจนซ์ RSI '+tech.rsi_div+'</div>'+
-      '</div>'+
-      '<div class="card"><b class="gold2">กระแสเงินในออปชัน (Order Flow)</b>'+
-        '<div class="grid g4 tiny" style="margin-top:6px">'+
-          '<div class="card kpi"><span class="k">RVOL</span><span class="v mono">'+f2(st.rvol,2)+'</span></div>'+
-          '<div class="card kpi"><span class="k">VWAP วันนี้</span><span class="v mono">'+f2(st.vwap,2)+'</span></div>'+
-          '<div class="card kpi"><span class="k">Put/Call (ปริมาณ)</span><span class="v mono">'+f2(st.pc_vol,2)+'</span></div>'+
-          '<div class="card kpi"><span class="k">Put/Call รายนาที (CBOE)</span><span class="v mono">'+f2(st.intra_pc,2)+'</span></div>'+
-          '<div class="card kpi"><span class="k">โมเมนตัม CALL ระหว่างวัน</span><span class="v mono">'+(st.intra_trend==null?'–':sgn(st.intra_trend))+'</span></div>'+
-          '<div class="card kpi"><span class="k">Put/Call (OI)</span><span class="v mono">'+f2(st.pc_oi,2)+'</span></div>'+
-          '<div class="card kpi"><span class="k">สัญญาผิดปกติ</span><span class="v mono">'+(st.unusual||0)+'</span></div>'+
-          '<div class="card kpi"><span class="k">OBV ไดเวอร์เจนซ์</span><span class="v mono">'+st.div+'</span></div>'+
-        '</div>'+
-        '<div style="margin-top:6px">'+hot+'</div>'+
-      '</div>'+
-    '</div>'+
-
-    '<div class="split" style="margin-top:12px">'+
-      '<div class="card"><b class="gold2">ข่าวจริงจากสำนักข่าว ('+((r.news_detail||{}).n||0)+' ข่าว · '+(r.news_detail&&r.news_detail.engine||'')+')</b>'+
-        '<div style="max-height:340px;overflow:auto;margin-top:6px">'+news+'</div>'+
-        '<div class="tiny dim" style="margin-top:6px">แหล่งที่ใช้: '+Object.entries((r.news_detail||{}).sources||{}).map(([k,v])=>esc(k)+' ('+v+')').join(' · ')+'</div>'+
-      '</div>'+
-      '<div class="card"><b class="gold2">เอกสารทางการจาก SEC และความเห็นมหาชน</b>'+filings+
-        '<div class="sep"></div>'+
-        '<div class="tiny">ความเห็น Stocktwits: <b class="'+( ((r.news_detail||{}).social||{}).score>0?'up':((r.news_detail||{}).social||{}).score<0?'down':'dim')+'">'+f2(((r.news_detail||{}).social||{}).score,2)+'</b> · '+
-        ' bullish '+(((r.news_detail||{}).social||{}).bullish||0)+' / bearish '+(((r.news_detail||{}).social||{}).bearish||0)+' จาก '+(((r.news_detail||{}).social||{}).total||0)+' ข้อความ</div>'+
-      '</div>'+
-    '</div>'+
-    ((r.news_detail&&r.news_detail.checks&&r.news_detail.checks.length)?
-      '<h3>การตรวจสอบข้อเท็จจริงข้ามสำนักข่าว</h3><div class="scroll tall"><table><thead><tr><th>ประเด็น</th><th>ผล</th><th>จำนวนแหล่ง</th><th>รายละเอียด</th></tr></thead><tbody>'+
-      r.news_detail.checks.map(c=>'<tr><td style="text-align:left;white-space:normal">'+esc(c.topic)+'</td><td><span class="tag '+(c.verdict==='ยืนยันแล้ว'?'green':c.verdict==='ยืนยันบางส่วน'?'blue':'warn')+'">'+esc(c.verdict)+'</span></td><td class="mono">'+c.n+'</td><td style="text-align:left;white-space:normal" class="tiny">'+esc(c.note)+'</td></tr>').join('')+
-      '</tbody></table></div>':'')+
-    '<div class="risk" style="margin-top:14px">ตัวเลข<b>โอกาสชนะ</b>และ<b>กำไร/ขาดทุน</b>ในหน้านี้มาจากการนับจริงบนประวัติราคาที่ดาวน์โหลดมา ไม่ใช่การคาดเดา · ส่วนที่กำกับว่า “แบบจำลอง” เป็นเพียงการอ้างอิงเทียบเคียง · พรีเมียมและกรีกส์จาก CBOE เป็นข้อมูลล่าช้า ตรวจสอบราคาจริงก่อนส่งคำสั่ง</div>';
-  window._calls = r.calls||[]; window._puts = r.puts||[];
-}
-function switchTab(kind){
-  tabC.classList.toggle('on', kind==='CALL');
-  tabP.classList.toggle('on', kind==='PUT');
-  document.getElementById('stkBody').innerHTML = strikeRows(kind==='CALL'?window._calls:window._puts, kind);
-}
-document.addEventListener('click', e=>{
-  const btn = e.target;
-  if(btn.tagName!=='BUTTON') return;
-});
-// expand/collapse the "why" rows
-document.addEventListener('click', e=>{
-  const t = e.target;
-  if(t.tagName==='BUTTON' && /ทำไม/.test(t.textContent)){
-    const tr = t.closest('tr').nextElementSibling;
-    if(tr){ tr.style.display = (tr.style.display==='none'||!tr.style.display)?'table-row':'none'; }
-  }
-});
-
-/* ---------------- sources ---------------- */
-let srcAt = 0, trkAt = 0;
-async function loadSources(){
-  srcAt = Date.now();
-  try{
-    const r = await fetch('/api/sources',{cache:'no-store'});
-    const j = await r.json();
-    srcSummary.innerHTML = '<span class="pill">สำนักข่าวที่ตอบกลับ <b class="up">'+j.ok+'</b> / '+j.total+'</span>'+
-      '<span class="pill">เครื่องวิเคราะห์น้ำเสียง: <b>'+esc(j.engine||'')+'</b></span>'+
-      '<span class="pill">ตรวจล่าสุด <b>'+dt(j.checked)+'</b></span>';
-    document.querySelector('#srcTable tbody').innerHTML = (j.sources||[]).map(s=>
-      '<tr><td>'+esc(s.name)+'</td><td class="tiny dim">'+esc(s.domain||'')+'</td><td class="tiny">'+esc(s.kind||'')+'</td>'+
-      '<td class="mono">'+f2(s.tier,1)+'</td>'+
-      '<td>'+(s.status==='ok'?'<span class="tag green">ใช้งานได้</span>':'<span class="tag red">ใช้ไม่ได้</span>')+'</td>'+
-      '<td class="mono">'+(s.used||0)+'</td><td class="mono">'+agoH(s.checked_h!=null?s.checked_h:null)+'</td>'+
-      '<td class="tiny dim" style="text-align:left;white-space:normal">'+esc(s.note||'')+'</td></tr>').join('') ||
-      '<tr><td colspan="8" class="dim">ยังไม่มีการตรวจ</td></tr>';
-  }catch(e){ srcSummary.innerHTML='<span class="pill">ตรวจแหล่งข่าวไม่สำเร็จ</span>'; }
+    '<div class="cards">'+ sideCard(v.call,'CALL',v.call_reason) + sideCard(v.put,'PUT',v.put_reason) +'</div>';
 }
 
-/* ---------------- track ---------------- */
-async function loadTrack(){
-  trkAt = Date.now();
-  try{
-    const r = await fetch('/api/track',{cache:'no-store'});
-    const j = await r.json();
-    let html = '<div class="row" style="margin-bottom:8px">'+
-      '<span class="pill">บันทึกทั้งหมด <b>'+(j.total||0)+'</b></span>'+
-      '<span class="pill">รอผล <b>'+(j.open||0)+'</b></span>'+
-      '<span class="pill">ตัดสินแล้ว <b>'+(j.closed||0)+'</b></span>'+
-      '<span class="pill">ชนะจริง <b class="up">'+f2(j.hit_rate,1)+'%</b></span>'+
-      '<span class="pill">ที่ระบบทำนายไว้ <b>'+f2(j.avg_predicted,1)+'%</b></span></div>';
-    if(j.calibration&&j.calibration.length){
-      html += '<div class="scroll"><table><thead><tr><th>ช่วงที่ทำนาย</th><th>จำนวนดีล</th><th>ชนะจริง</th><th>ทำนายไว้</th><th>จริง</th><th>ความคลาดเคลื่อน</th></tr></thead><tbody>'+
-        j.calibration.map(c=>'<tr><td class="mono">'+c.bucket+'–'+(c.bucket+10)+'%</td><td class="mono">'+c.n+'</td><td class="mono">'+c.wins+'</td>'+
-        '<td class="mono">'+f2(c.predicted,1)+'%</td><td class="mono">'+f2(c.realized,1)+'%</td>'+
-        '<td class="mono '+(Math.abs(c.realized-c.predicted)<=8?'up':'warn')+'">'+sgn(c.realized-c.predicted)+' จุด</td></tr>').join('')+'</tbody></table></div>';
-    } else {
-      html += '<div class="tiny dim">ยังไม่มีผลจริงครบกำหนด — ระบบจะเริ่มตัดสินผลอัตโนมัติเมื่อสัญญาที่บันทึกไว้หมดอายุ (ต้องรออย่างน้อย 1 สัปดาห์หลังเริ่มเก็บสถิติ) และไฟล์สถิติจะรีเซ็ตเมื่อ deploy ใหม่บน Render แผนฟรี</div>';
-    }
-    trackBox.innerHTML = html;
-  }catch(e){ trackBox.innerHTML = '<div class="dim">โหลดสถิติไม่สำเร็จ</div>'; }
+function sideCard(s, side, reason){
+  const cls = side==='CALL'?'c':'p';
+  if(!s) return '<div class="pick '+cls+'"><div class="dim">ไม่พบสัญญา '+side+' ที่มีสภาพคล่องพอในวันนี้</div></div>';
+  const good = (s.hist_avg_pnl||0)>0;
+  return '<div class="pick '+cls+'">'+
+    '<div class="top"><div>'+
+      '<div class="tick"><span class="'+(side==='CALL'?'call':'put')+'">'+side+'</span> $'+s.strike+'</div>'+
+      '<div class="tiny dim">พรีเมียม '+money(s.premium)+' · ต้องปิดถึง '+money(s.breakeven)+'</div>'+
+    '</div>'+signifTag(s.edge_signif)+'</div>'+
+    '<div class="big '+pcol(s.pop)+'">'+pct(s.pop)+' <span class="tiny dim" style="font-weight:400">โอกาสชนะ</span></div>'+
+    '<div class="tiny dim">นับจริง <b>'+(s.hist_win_count!=null?s.hist_win_count:'—')+'/'+(s.hist_n||0)+'</b> รอบ · ช่วง 95% '+
+      num(s.pop_lo,1)+'–'+num(s.pop_hi,1)+'%'+
+      (s.hist_n_eff&&s.hist_n&&s.hist_n_eff < s.hist_n*0.9 ? ' · รอบอิสระจริง ~'+num(s.hist_n_eff,0) : '')+'</div>'+
+    '<div class="sep"></div>'+
+    '<div class="tiny">กำไรเฉลี่ย <b class="mono '+(good?'up':'down')+'">'+money(s.hist_avg_pnl)+'</b>'+
+      (s.hist_profit_factor!=null?' · กำไร/ขาดทุน '+num(s.hist_profit_factor,2)+' เท่า':'')+
+      ' · กลาง '+money(s.hist_median_pnl)+'</div>'+
+    '<div class="tiny dim">ครึ่งใหม่ '+pct(s.hist_recent_win)+' · ครึ่งเก่า '+pct(s.hist_older_win)+
+      ' · ราคาที่ตลาดเรียกคิดเป็น '+pct(s.model_pop)+'</div>'+
+    (reason?'<div class="why tiny" style="margin-top:8px">'+esc(reason)+'</div>':'')+
+  '</div>';
 }
 
-function goAnalyze(){
-  const v = (q.value||'').trim().toUpperCase().replace(/[^A-Z]/g,'');
-  if(!v) return;
-  q.value = v;
-  openDetail(v);
+function strikeRows(rows){
+  if(!rows||!rows.length) return '<tr><td colspan="9" class="dim">ไม่มีข้อมูล strike ในช่วงนี้</td></tr>';
+  return rows.map(s=>{
+    const good=(s.hist_avg_pnl||0)>0;
+    return '<tr>'+
+      '<td class="mono"><span class="'+(s.kind==='CALL'?'call':'put')+'">'+s.kind+'</span> $'+s.strike+
+        '<div class="tiny dim">คุ้มทุน '+money(s.breakeven)+'</div></td>'+
+      '<td class="mono">'+money(s.premium)+'</td>'+
+      '<td>'+bar(s.pop,s.pop_lo,s.pop_hi)+'<div class="tiny dim">'+num(s.pop,1)+'%</div></td>'+
+      '<td class="mono tiny">'+(s.hist_win_count!=null?s.hist_win_count:'—')+'/'+(s.hist_n||0)+'</td>'+
+      '<td class="mono tiny '+(good?'up':'down')+'">'+money(s.hist_avg_pnl)+'</td>'+
+      '<td class="mono tiny">'+(s.volume||0).toLocaleString()+' / '+(s.oi||0).toLocaleString()+'</td>'+
+      '<td class="mono tiny">'+num(s.spread_pct,1)+'%</td>'+
+      '<td class="mono tiny">'+num(s.delta,2)+'</td>'+
+      '<td class="mono '+pcol(s.omega)+'">'+num(s.omega,0)+'</td>'+
+    '</tr>';
+  }).join('');
 }
 
-/* ---------------- boot ---------------- */
-detail = document.getElementById('detail');
-if(!detail.showModal) detail.showModal = function(){ this.setAttribute('open',''); };
-refreshAll(true);
-setInterval(()=>{ cd--; clock(); if(cdleft()<=0){ cd=CD; refreshAll(false);} },1000);
-setInterval(()=>{ if(Date.now()-srcAt>300000) loadSources(); }, 60000);
-// While the dashboard is still empty, poll quickly instead of waiting out the
-// whole refresh countdown: the pass publishes each ticker as it lands, so rows
-// appear one after another rather than all at the end of a long wait.
-setInterval(()=>{ if(!scan || !(scan.items||[]).length) refreshAll(false); }, 5000);
+function newsBlock(r){
+  const items = ((r.news_detail||{}).items||[]);
+  if(!items.length) return '<div class="dim">รอบนี้ยังไม่มีข่าวที่ดึงได้</div>';
+  return items.map(n=>
+    '<div style="padding:6px 0;border-bottom:1px solid var(--line)">'+
+      '<span class="tag '+(n.c>0.1?'green':n.c<-0.1?'red':'grey')+'">'+num(n.c,2)+'</span> '+
+      (n.url?'<a href="'+esc(n.url)+'" target="_blank" rel="noopener">'+esc(n.t)+'</a>':'<span>'+esc(n.t)+'</span>')+
+      '<div class="tiny dim">'+esc(n.s||'')+' · '+(n.h!=null?num(n.h,1)+' ชั่วโมงที่แล้ว':'')+'</div>'+
+    '</div>').join('');
+}
+
+function moveTable(r){
+  const ms = (r.move_stats||[]);
+  if(!ms.length) return '<div class="dim tiny">ไม่มีสถิติ</div>';
+  return '<div class="scroll"><table><thead><tr>'+
+    '<th>เคลื่อนไหว</th><th>ขึ้นไปแตะ</th><th>ลงไปแตะ</th><th>ปิดบวกเกิน</th><th>ปิดลบเกิน</th></tr></thead><tbody>'+
+    ms.map(m=>'<tr><td class="mono">±'+m.move+'%</td><td class="mono up">'+num(m.up,1)+'%</td>'+
+      '<td class="mono down">'+num(m.down,1)+'%</td><td class="mono">'+num(m.finish_up,1)+'%</td>'+
+      '<td class="mono">'+num(m.finish_down,1)+'%</td></tr>').join('')+
+    '</tbody></table></div>';
+}
+
+/* ---------------------------------- start --------------------------------- */
+boot();
 </script>
 </body>
 </html>

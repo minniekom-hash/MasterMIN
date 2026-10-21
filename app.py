@@ -12,13 +12,15 @@ Routes
 """
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 import re
 import threading
 import time
 
-from flask import Flask, jsonify, render_template_string
+from flask import (Flask, jsonify, redirect, render_template_string, request,
+                   session, url_for)
 
 from omega import engine, news, track
 from omega.data import chain, daily, provider_status, yahoo_price
@@ -29,6 +31,102 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(na
 log = logging.getLogger("omega.app")
 
 app = Flask(__name__)
+
+# --------------------------------------------------------------------------- #
+# single-user access
+# --------------------------------------------------------------------------- #
+# This dashboard is meant for one person.  Everything except the liveness probe
+# is behind a password, because the data behind it (and the ability to burn the
+# instance's network budget) is not something to leave open to the internet.
+#
+# SITE_PASSWORD should be set in the host's environment.  When it is not, the
+# site still works but falls back to a known default, and the UI says so --
+# silently running without a password is the one outcome worth avoiding.
+_DEFAULT_PASSWORD = "omega-min-2026"
+SITE_PASSWORD = os.environ.get("SITE_PASSWORD") or _DEFAULT_PASSWORD
+USING_DEFAULT_PASSWORD = not os.environ.get("SITE_PASSWORD")
+
+# A signed cookie needs a key; without one Flask invents a new key per process
+# and every restart would log the user out.  Render can generate a stable value.
+app.secret_key = os.environ.get("SECRET_KEY") or os.urandom(24).hex()
+app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
+                  PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 30)
+
+# Paths reachable without a session.  The probe must stay open so the platform
+# can tell a healthy instance from a dead one.
+_PUBLIC = {"/health", "/login", "/logout"}
+
+_LOGIN_HTML = """<!doctype html><html lang="th"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>เข้าสู่ระบบ · OMEGA</title>
+<style>
+  :root{color-scheme:dark}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:grid;place-items:center;background:#070a0f;
+       color:#e8e6e1;font-family:ui-sans-serif,system-ui,"Segoe UI",sans-serif}
+  .box{width:min(400px,92vw);background:#0d1218;border:1px solid #1e2733;border-radius:16px;
+       padding:28px 26px;box-shadow:0 24px 60px rgba(0,0,0,.55)}
+  h1{margin:0 0 4px;font-size:19px;letter-spacing:.02em}
+  .sub{color:#7d8a99;font-size:12.5px;margin-bottom:20px;line-height:1.55}
+  .gold{color:#d9b166}
+  input{width:100%;padding:12px 13px;border-radius:10px;border:1px solid #26303d;
+        background:#080c11;color:#e8e6e1;font-size:15px;outline:none}
+  input:focus{border-color:#d9b166}
+  button{width:100%;margin-top:12px;padding:12px;border:0;border-radius:10px;cursor:pointer;
+         background:linear-gradient(180deg,#e3c07a,#c99f4e);color:#0a0d12;font-weight:700;font-size:15px}
+  .err{margin-top:12px;color:#ff8b8b;font-size:13px}
+  .note{margin-top:16px;color:#66707d;font-size:11.5px;line-height:1.6}
+</style></head><body>
+<form class="box" method="post">
+  <h1>OMEGA <span class="gold">Singularity</span></h1>
+  <div class="sub">แดชบอร์ดส่วนตัว · ใส่รหัสผ่านเพื่อเข้าใช้</div>
+  <input type="password" name="pw" placeholder="รหัสผ่าน" autofocus autocomplete="current-password">
+  <button type="submit">เข้าใช้งาน</button>
+  {% if error %}<div class="err">{{ error }}</div>{% endif %}
+  <div class="note">ข้อมูลออปชันจาก CBOE เป็นแบบล่าช้า · หน้าเว็บจะแสดงเวลาของข้อมูลทุกครั้ง</div>
+</form></body></html>"""
+
+
+@app.before_request
+def _require_login():
+    path = request.path
+    if path in _PUBLIC or path.startswith("/static"):
+        return None
+    if session.get("ok"):
+        return None
+    if path.startswith("/api/"):
+        return jsonify(error="ต้องเข้าสู่ระบบก่อน", login=url_for("login")), 401
+    return redirect(url_for("login", next=path))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = ""
+    if request.method == "POST":
+        given = (request.form.get("pw") or "").strip()
+        if hmac.compare_digest(given, SITE_PASSWORD):
+            session.clear()
+            session["ok"] = True
+            session.permanent = True
+            nxt = request.args.get("next") or "/"
+            # Only ever bounce to a local path -- an open redirect here would let
+            # a crafted link send the user somewhere else after logging in.
+            if not nxt.startswith("/") or nxt.startswith("//"):
+                nxt = "/"
+            return redirect(nxt)
+        time.sleep(0.6)                 # slow down guessing
+        error = "รหัสผ่านไม่ถูกต้อง"
+        log.warning("failed login from %s", request.headers.get("X-Forwarded-For", "?"))
+    elif session.get("ok"):
+        return redirect("/")
+    return render_template_string(_LOGIN_HTML, error=error)
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
 _TPL = {"src": None, "mtime": None}
 
 
@@ -200,7 +298,8 @@ def index():
     src = _template_source()
     if isinstance(src, tuple):
         return src
-    return render_template_string(src, refresh=REFRESH_SEC, version=VERSION)
+    return render_template_string(src, refresh=REFRESH_SEC, version=VERSION,
+                                  using_default_password=USING_DEFAULT_PASSWORD)
 
 
 @app.route("/health")

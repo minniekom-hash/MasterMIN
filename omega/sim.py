@@ -342,7 +342,24 @@ def hist_outcome(dist: dict, kind: str, strike: float, spot: float, premium: flo
 
     n = int(len(dist["rel"]))
     wins = int(np.sum(end_be))
-    lo, hi = quant.wilson(wins, n)
+
+    # ---- how many of those windows are actually independent? ---------------
+    # Rolling windows are sampled every single day, so consecutive windows share
+    # h-1 of their h days.  With h=7 and 495 windows there are not 495 independent
+    # observations -- there are roughly span/h of them.  Reporting the naive
+    # Wilson interval on 495 would claim a precision the data does not have, and
+    # the interval would look far tighter at the 7-day horizon than at the 1-day
+    # one when in reality the opposite is true.
+    #
+    # n_eff is the conservative count: the span of the study divided by the
+    # window length.  At h=1 nothing overlaps and n_eff == n; as h grows the
+    # interval widens, which is exactly the honest behaviour.
+    h = max(int(dist.get("window") or 1), 1)
+    span = int(dist.get("span_days") or n)
+    n_eff = max(1, int(round((span + h - 1) / h)))
+    n_eff = min(n_eff, n)
+    p = wins / n if n else 0.0
+    lo, hi = quant.wilson(p * n_eff, n_eff)      # honest interval on independent n
 
     # Money, counted the same way as the win rate.
     #
@@ -380,6 +397,7 @@ def hist_outcome(dist: dict, kind: str, strike: float, spot: float, premium: flo
 
     return dict(
         hist_n=n,
+        hist_n_eff=n_eff,
         hist_win=round(100.0 * wins / n, 1) if n else None,
         hist_win_count=wins,
         hist_win_lo=round(lo, 1), hist_win_hi=round(hi, 1),

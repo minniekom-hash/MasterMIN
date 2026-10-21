@@ -38,6 +38,20 @@ services:
         value: "4"
       - key: INLINE_WAIT_SEC
         value: "20"
+      # Each real expiry date in the chain gets its own answer.  Four covers the
+      # nearest weekly plus the following one on most names; more than that and
+      # the pass gets slower without telling a short-dated trader anything new.
+      - key: MAX_EXPIRY_VIEWS
+        value: "4"
+      # Signs the login cookie.  Render generates it once, so a restart no longer
+      # logs you out.
+      - key: SECRET_KEY
+        generateValue: true
+      # The dashboard password.  `sync: false` keeps it out of this repository:
+      # Render prompts for it in the dashboard and stores it only there.  Until it
+      # is set the app falls back to a known default and the page says so.
+      - key: SITE_PASSWORD
+        sync: false
       - key: CONTACT_EMAIL
         sync: false
       - key: ALPHAVANTAGE_KEY
