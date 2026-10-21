@@ -104,7 +104,7 @@ def _seed(sym: str) -> int:
 # The instance this runs on has a hard memory limit, and a worker that is
 # killed for using too much of it takes the whole page down with it.  The scan
 # therefore stops itself before that point rather than discovering it.
-MEMORY_CEILING_MB = env_float("MEMORY_CEILING_MB", 300.0)
+MEMORY_CEILING_MB = env_float("MEMORY_CEILING_MB", 260.0)
 
 
 def _rss_mb() -> float:
