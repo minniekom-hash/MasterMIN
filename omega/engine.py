@@ -71,7 +71,7 @@ ANALYZE_SLOTS = env_int("ANALYZE_SLOTS", max(1, SCAN_WORKERS))
 # The wall-clock ceiling for one ticker.  Everything inside has its own
 # timeout; this is the backstop for the case where a provider accepts the
 # connection and then never answers.
-ANALYZE_TIMEOUT = env_float("ANALYZE_TIMEOUT", 75.0)
+ANALYZE_TIMEOUT = env_float("ANALYZE_TIMEOUT", 45.0)
 WEIGHTS = {"A": 0.16, "B": 0.12, "C": 0.16, "D": 0.22, "E": 0.14, "H": 0.20}
 TARGET_DELTA = 0.40
 
@@ -1087,7 +1087,10 @@ def _analyze_inner(sym: str) -> dict | None:
     # provider that actually answers from these hosts does so in under 2s.
     from concurrent.futures import ThreadPoolExecutor, TimeoutError as FTimeout
 
-    budget = time.time() + 40.0
+    # The budget for the four price fetches.  Tight on purpose: every provider
+    # has its own timeout, and a ticker that cannot be priced quickly is
+    # better served by the fallback than by holding the scan.
+    budget = time.time() + 25.0
 
     def take(fut, fallback):
         left = max(budget - time.time(), 1.0)
@@ -1118,7 +1121,7 @@ def _analyze_inner(sym: str) -> dict | None:
         f_news = pool.submit(news.for_ticker, sym, name)
         _T["fetch"] = int((time.time() - _t0) * 1000)
         try:
-            ns = f_news.result(timeout=18.0)
+            ns = f_news.result(timeout=12.0)
         except FTimeout:
             log.warning("analyze %s: news deadline hit -- continuing without it", sym)
             ns = {}

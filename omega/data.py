@@ -1,4 +1,4 @@
-"""Omega v2 — market data layer.
+﻿"""Omega v2 โ€” market data layer.
 
 Providers, in preference order (each has a hard timeout + circuit breaker):
 
@@ -12,6 +12,7 @@ old engine hang and get HTTP 429 is never touched.
 from __future__ import annotations
 
 import math
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -27,9 +28,37 @@ NASDAQ = "https://api.nasdaq.com/api/quote"
 # host keys the breaker uses for Yahoo's chart API (see util.Http.get)
 YAHOO_HOSTS = ("query1.finance.yahoo.com", "query2.finance.yahoo.com")
 
+# Yahoo throttles datacentre IPs, and one refused request used to cost every
+# ticker in the scan the full dial-and-read time -- twice per host, because
+# the breaker only opened after two failures.  The first refusal now switches
+# Yahoo off for the whole process for a while, so the tickers that follow go
+# straight to the fallback histories instead of queueing behind a provider
+# that has already said no.
+_YAHOO_LOCK = threading.Lock()
+_YAHOO_UNTIL = 0.0
+YAHOO_COOLDOWN = 180.0
+
+
+def _yahoo_off() -> None:
+    global _YAHOO_UNTIL
+    with _YAHOO_LOCK:
+        _YAHOO_UNTIL = time.time() + YAHOO_COOLDOWN
+
+
+def yahoo_blocked() -> bool:
+    with _YAHOO_LOCK:
+        return time.time() < _YAHOO_UNTIL
+
 
 def yahoo_ok() -> bool:
-    """True while at least one Yahoo host still has a closed circuit."""
+    """True while Yahoo can still be asked.
+
+    Both hosts have to be willing: one refusing host is not a reason to keep
+    dialling it, and the other one refusing is the whole provider being
+    unavailable.
+    """
+    if yahoo_blocked():
+        return False
     return any(breaker.healthy(h) for h in YAHOO_HOSTS)
 
 HEALTH: dict = {}
@@ -47,6 +76,8 @@ def _mark(name: str, ok: bool, note: str = "") -> None:
 # Yahoo chart
 # --------------------------------------------------------------------------- #
 def _yahoo_chart(sym: str, rng: str, itv: str):
+    if yahoo_blocked():
+        return None, None
     for host in (1, 2):
         url = f"{YF.format(n=host)}/v8/finance/chart/{sym}?range={rng}&interval={itv}&includePrePost=false&events=div%2Csplit"
         # Check the breaker *before* dialling.  Yahoo throttles datacentre IPs, and
@@ -55,9 +86,10 @@ def _yahoo_chart(sym: str, rng: str, itv: str):
         # air that makes the whole scan look like it has hung.
         if not breaker.healthy(f"query{host}.finance.yahoo.com"):
             continue
-        j = http.json(url, timeout=(4, 9))
+        j = http.json(url, timeout=(3, 6))
         if not j:
-            _mark("Yahoo Chart", False, "เรียกไม่สำเร็จ (ถูกจำกัด/เครือข่าย)")
+            _mark("Yahoo Chart", False, "เน€เธฃเธตเธขเธเนเธกเนเธชเธณเน€เธฃเนเธ (เธ–เธนเธเธเธณเธเธฑเธ”/เน€เธเธฃเธทเธญเธเนเธฒเธข)")
+            _yahoo_off()
             continue
         try:
             res = (j.get("chart") or {}).get("result") or []
@@ -100,9 +132,9 @@ def _stockanalysis_hist(sym: str):
     """stockanalysis.com unofficial JSON: [{t,o,h,l,c,v}, ...] newest first."""
     j = http.json(f"https://stockanalysis.com/api/symbol/s/{sym.lower()}/history?range=2Y&period=Day",
                   headers={"Accept": "application/json", "Referer": f"https://stockanalysis.com/stocks/{sym.lower()}/history/"},
-                  timeout=(4, 12))
+                  timeout=(3, 8))
     if not isinstance(j, dict) or not isinstance(j.get("data"), list):
-        _mark("StockAnalysis History", False, "รูปแบบข้อมูลไม่ตรง")
+        _mark("StockAnalysis History", False, "เธฃเธนเธเนเธเธเธเนเธญเธกเธนเธฅเนเธกเนเธ•เธฃเธ")
         return None
     recs, idx = [], []
     for r in j["data"]:
@@ -114,7 +146,7 @@ def _stockanalysis_hist(sym: str):
             continue
     df = pd.DataFrame(recs, index=pd.DatetimeIndex(idx)).dropna(subset=["Close"]).sort_index()
     if len(df) < 60:
-        _mark("StockAnalysis History", False, f"ได้เพียง {len(df)} แถว")
+        _mark("StockAnalysis History", False, f"เนเธ”เนเน€เธเธตเธขเธ {len(df)} เนเธ–เธง")
         return None
     _mark("StockAnalysis History", True)
     return df
@@ -122,7 +154,7 @@ def _stockanalysis_hist(sym: str):
 
 def _cboe_hist(sym: str):
     """CBOE publishes full daily history on the same CDN as the option chain."""
-    j = http.json(f"{CBOE}/charts/historical/{sym}.json", timeout=(4, 10))
+    j = http.json(f"{CBOE}/charts/historical/{sym}.json", timeout=(3, 7))
     if not j or not isinstance(j.get("data"), list):
         _mark("CBOE History", False)
         return None
@@ -137,27 +169,27 @@ def _cboe_hist(sym: str):
     df = pd.DataFrame(recs, index=pd.DatetimeIndex(idx)).dropna(subset=["Close"]).sort_index()
     df = df[df.index.notna()]
     if len(df) < 60:
-        _mark("CBOE History", False, f"ได้เพียง {len(df)} แถว")
+        _mark("CBOE History", False, f"เนเธ”เนเน€เธเธตเธขเธ {len(df)} เนเธ–เธง")
         return None
     _mark("CBOE History", True)
     return df
 
 
 def _nasdaq_hist(sym: str, days: int = 730):
-    """Nasdaq historical API — needs an explicit date range, an empty range
+    """Nasdaq historical API โ€” needs an explicit date range, an empty range
     returns no rows (the reason the old build silently produced nothing)."""
     end = datetime.now(timezone.utc).date()
     start = end - timedelta(days=int(days * 1.6))
     url = (f"{NASDAQ}/{sym}/historical?assetclass=stocks&limit={min(days, 5000)}"
            f"&fromdate={start.isoformat()}&todate={end.isoformat()}")
-    j = http.json(url, headers={"Accept": "application/json"}, timeout=(5, 18))
+    j = http.json(url, headers={"Accept": "application/json"}, timeout=(3, 8))
     if not j:
         _mark("Nasdaq History", False)
         return None
     try:
         rows = (((j.get("data") or {}).get("tradesTable") or {}).get("rows")) or []
         if not rows:
-            _mark("Nasdaq History", False, "ไม่มีแถวข้อมูล")
+            _mark("Nasdaq History", False, "เนเธกเนเธกเธตเนเธ–เธงเธเนเธญเธกเธนเธฅ")
             return None
         recs, idx = [], []
 
@@ -173,7 +205,7 @@ def _nasdaq_hist(sym: str, days: int = 730):
                              Close=num(r.get("close")), Volume=num(r.get("volume"))))
         df = pd.DataFrame(recs, index=pd.DatetimeIndex(idx)).dropna(subset=["Close"]).sort_index()
         if len(df) < 60:
-            _mark("Nasdaq History", False, f"ได้เพียง {len(df)} แถว")
+            _mark("Nasdaq History", False, f"เนเธ”เนเน€เธเธตเธขเธ {len(df)} เนเธ–เธง")
             return None
         _mark("Nasdaq History", True)
         return df
@@ -196,14 +228,14 @@ def daily(sym: str, ttl: int = 600) -> pd.DataFrame:
         if yahoo_ok():
             df, _ = _yahoo_chart(sym, "2y", "1d")
         else:
-            _mark("Yahoo Chart", False, "ข้ามชั่วคราว (ถูกจำกัดอัตรา)")
+            _mark("Yahoo Chart", False, "เธเนเธฒเธกเธเธฑเนเธงเธเธฃเธฒเธง (เธ–เธนเธเธเธณเธเธฑเธ”เธญเธฑเธ•เธฃเธฒ)")
         if df is not None and len(df) >= 120:
             _mark("Yahoo Chart", True)
             return df
         if df is not None and len(df) >= 60:
-            _mark("Yahoo Chart", True, "ประวัติสั้น")
+            _mark("Yahoo Chart", True, "เธเธฃเธฐเธงเธฑเธ•เธดเธชเธฑเนเธ")
             return df
-        _mark("Yahoo Chart", False, "ถูกจำกัดอัตรา/ดึงไม่ได้")
+        _mark("Yahoo Chart", False, "เธ–เธนเธเธเธณเธเธฑเธ”เธญเธฑเธ•เธฃเธฒ/เธ”เธถเธเนเธกเนเนเธ”เน")
         # The three alternates are independent, so they are asked at the same
         # time and the first usable answer wins.  Tried one after another, a
         # blocked Yahoo cost ~30s of waiting before the ticker had any history
@@ -228,13 +260,13 @@ def daily(sym: str, ttl: int = 600) -> pd.DataFrame:
             if alt is None or len(alt) < 60:
                 continue
             if df is None:
-                _mark(name + " (สำรอง)", True, f"ใช้แทน Yahoo สำหรับ {sym}")
+                _mark(name + " (เธชเธณเธฃเธญเธ)", True, f"เนเธเนเนเธ—เธ Yahoo เธชเธณเธซเธฃเธฑเธ {sym}")
                 return alt
             # Yahoo came back short: stitch the older series underneath it
             joined = pd.concat([alt[alt.index < df.index[0]], df]).sort_index()
             joined = joined[~joined.index.duplicated(keep="last")]
             if len(joined) > len(df):
-                _mark(name + " (สำรอง)", True, "ต่อประวัติให้ Yahoo")
+                _mark(name + " (เธชเธณเธฃเธญเธ)", True, "เธ•เนเธญเธเธฃเธฐเธงเธฑเธ•เธดเนเธซเน Yahoo")
                 return joined
     
     df = cache.wrap(f"d:{sym}", ttl, load)
@@ -247,7 +279,7 @@ def _cboe_intraday(sym: str):
     This is the closest thing to a real option tape that is available without a
     paid feed, so it powers the intraday part of the order-flow model.
     """
-    j = http.json(f"{CBOE}/charts/intraday/{sym}.json", timeout=(4, 10))
+    j = http.json(f"{CBOE}/charts/intraday/{sym}.json", timeout=(3, 7))
     if not j or not isinstance(j.get("data"), list):
         _mark("CBOE Intraday", False)
         return None
@@ -264,13 +296,13 @@ def _cboe_intraday(sym: str):
                          Calls=float(v.get("calls_volume") or 0.0),
                          Puts=float(v.get("puts_volume") or 0.0)))
     if not recs:
-        _mark("CBOE Intraday", False, "ไม่มีแท่งเทียนรายนาที")
+        _mark("CBOE Intraday", False, "เนเธกเนเธกเธตเนเธ—เนเธเน€เธ—เธตเธขเธเธฃเธฒเธขเธเธฒเธ—เธต")
         return None
     df = pd.DataFrame(recs, index=pd.DatetimeIndex(idx)).dropna(subset=["Close"]).sort_index()
     if len(df) < 20:
-        _mark("CBOE Intraday", False, f"ได้เพียง {len(df)} แท่ง")
+        _mark("CBOE Intraday", False, f"เนเธ”เนเน€เธเธตเธขเธ {len(df)} เนเธ—เนเธ")
         return None
-    _mark("CBOE Intraday", True, "รวมปริมาณ CALL/PUT รายนาที")
+    _mark("CBOE Intraday", True, "เธฃเธงเธกเธเธฃเธดเธกเธฒเธ“ CALL/PUT เธฃเธฒเธขเธเธฒเธ—เธต")
     return df
 
 
@@ -282,7 +314,10 @@ def intraday(sym: str, ttl: int = 180) -> pd.DataFrame:
         if yahoo_ok():
             df, _ = _yahoo_chart(sym, "5d", "5m")
             if df is None or len(df) < 20:
-                df, _ = _yahoo_chart(sym, "1d", "5m")
+                # A second Yahoo range costs another full dial-and-read cycle
+                # and rarely adds anything the first one did not have.
+                if yahoo_ok():
+                    df, _ = _yahoo_chart(sym, "1d", "5m")
         if df is not None and len(df) > 10:
             return df
         return _cboe_intraday(sym)
@@ -309,7 +344,7 @@ def yahoo_price(sym: str):
 # --------------------------------------------------------------------------- #
 def nasdaq_quote(sym: str):
     def load():
-        j = http.json(f"{NASDAQ}/{sym}/info?assetclass=stocks", headers={"Accept": "application/json"}, timeout=(5, 15))
+        j = http.json(f"{NASDAQ}/{sym}/info?assetclass=stocks", headers={"Accept": "application/json"}, timeout=(3, 8))
         if not j or not (j.get("data") or {}).get("primaryData"):
             _mark("Nasdaq Quote", False)
             return None
@@ -333,7 +368,7 @@ def nasdaq_quote(sym: str):
 
 
 # --------------------------------------------------------------------------- #
-# CBOE delayed quotes — the option chain workhorse
+# CBOE delayed quotes โ€” the option chain workhorse
 # --------------------------------------------------------------------------- #
 def _parse_osym(osym: str):
     """'SOFI261023C00005000' -> ('2026-10-23', 'CALL', 5.0)"""
@@ -352,7 +387,7 @@ def chain(sym: str, ttl: int = 120):
     """Full delayed option chain with provider Greeks. Returns dict or None."""
 
     def load():
-        j = http.json(f"{CBOE}/options/{sym}.json", timeout=(4, 10))
+        j = http.json(f"{CBOE}/options/{sym}.json", timeout=(3, 7))
         if not j or not j.get("data"):
             _mark("CBOE Chain", False)
             return None
