@@ -204,24 +204,37 @@ def daily(sym: str, ttl: int = 600) -> pd.DataFrame:
             _mark("Yahoo Chart", True, "ประวัติสั้น")
             return df
         _mark("Yahoo Chart", False, "ถูกจำกัดอัตรา/ดึงไม่ได้")
-        for name, fn in (("StockAnalysis", lambda: _stockanalysis_hist(sym)),
-                         ("CBOE History", lambda: _cboe_hist(sym)),
-                         ("Nasdaq History", lambda: _nasdaq_hist(sym))):
-            try:
-                alt = fn()
-            except Exception as ex:
-                log.info("daily %s via %s: %s", sym, name, ex)
-                alt = None
-            if alt is not None and len(alt) >= 60:
-                if df is None:
-                    _mark(name + " (สำรอง)", True, f"ใช้แทน Yahoo สำหรับ {sym}")
-                    return alt
-                # Yahoo came back short: stitch the older series underneath it
-                joined = pd.concat([alt[alt.index < df.index[0]], df]).sort_index()
-                joined = joined[~joined.index.duplicated(keep="last")]
-                if len(joined) > len(df):
-                    _mark(name + " (สำรอง)", True, "ต่อประวัติให้ Yahoo")
-                    return joined
+        # The three alternates are independent, so they are asked at the same
+        # time and the first usable answer wins.  Tried one after another, a
+        # blocked Yahoo cost ~30s of waiting before the ticker had any history
+        # at all -- which on a shared instance was most of a scan cycle.
+        from concurrent.futures import ThreadPoolExecutor
+
+        alts = {}
+        with ThreadPoolExecutor(max_workers=3) as ex:
+            futs = {ex.submit(fn): name for name, fn in (
+                ("StockAnalysis", lambda: _stockanalysis_hist(sym)),
+                ("CBOE History", lambda: _cboe_hist(sym)),
+                ("Nasdaq History", lambda: _nasdaq_hist(sym)))}
+            for f in futs:
+                name = futs[f]
+                try:
+                    alts[name] = f.result(timeout=12.0)
+                except Exception as err:
+                    log.info("daily %s via %s: %s", sym, name, err)
+                    alts[name] = None
+        for name, alt in alts.items():
+            if alt is None or len(alt) < 60:
+                continue
+            if df is None:
+                _mark(name + " (สำรอง)", True, f"ใช้แทน Yahoo สำหรับ {sym}")
+                return alt
+            # Yahoo came back short: stitch the older series underneath it
+            joined = pd.concat([alt[alt.index < df.index[0]], df]).sort_index()
+            joined = joined[~joined.index.duplicated(keep="last")]
+            if len(joined) > len(df):
+                _mark(name + " (สำรอง)", True, "ต่อประวัติให้ Yahoo")
+                return joined
     
     df = cache.wrap(f"d:{sym}", ttl, load)
     return df if df is not None else pd.DataFrame()

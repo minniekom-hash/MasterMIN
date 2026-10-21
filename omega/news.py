@@ -300,7 +300,7 @@ def general_items():
                 name, url = futs[f]
                 try:
                     # Hard deadline per feed: see ticker_feeds().
-                    items = f.result(timeout=20.0)
+                    items = f.result(timeout=12.0)
                 except Exception:
                     items = None
                 if items is None:
@@ -429,7 +429,7 @@ def ticker_feeds(sym: str):
                 # A feed that accepts the connection and then never answers would
                 # otherwise park this worker for good; the scan would sit at
                 # "no progress" and the dashboard would stay empty.
-                items = f.result(timeout=20.0)
+                items = f.result(timeout=12.0)
             except Exception:
                 items = None
             if items is None:

@@ -76,6 +76,36 @@ def _seed(sym: str) -> int:
     return (abs(hash(sym)) % 100000) + int(time.time() // 900)
 
 
+_SPY_LOCK = threading.Lock()
+_SPY: dict = {"df": None, "ts": 0.0}
+
+
+def _spy_benchmark():
+    """SPY's daily series, used to say whether a ticker is beating the market.
+
+    Fetched at most once an hour and behind a lock.  A benchmark that is an
+    hour old is still a benchmark, and when the price provider is refusing us
+    every ticker in the scan used to pay the full fallback chain for it -- the
+    two slowest tickers in a cycle were exactly the ones that triggered it.
+    """
+    global _SPY
+    if _SPY["df"] is not None and (time.time() - _SPY["ts"]) < 3600:
+        return _SPY["df"]
+    if not _SPY_LOCK.acquire(blocking=False):
+        # A refresh is already running elsewhere; do not make this ticker wait
+        # for it, use the series we already have.
+        return _SPY["df"]
+    try:
+        df = cache.wrap("d:spy_bench", 3600, lambda: data.daily("SPY"))
+        if df is not None and not df.empty:
+            _SPY = {"df": df, "ts": time.time()}
+        return df
+    except Exception:
+        return _SPY["df"]
+    finally:
+        _SPY_LOCK.release()
+
+
 # --------------------------------------------------------------------------- #
 # signals (models C, D, E)
 # --------------------------------------------------------------------------- #
@@ -310,7 +340,35 @@ def news_signal(ns: dict):
 # --------------------------------------------------------------------------- #
 # earnings calendar (best effort, cached)
 # --------------------------------------------------------------------------- #
+def _earn_day(ds: str) -> list:
+    """The symbols reporting on one calendar day."""
+    j = http.json(f"https://api.nasdaq.com/api/calendar/earnings?date={ds}",
+                  headers={"Accept": "application/json"}, timeout=(4, 8))
+    if not j:
+        return []
+    out = []
+    for row in ((j.get("data") or {}).get("rows") or []):
+        sym = (row.get("symbol") or "").upper()
+        if sym:
+            out.append(sym)
+    return out
+
+
+_EARN_LOCK = threading.Lock()
+_EARN: dict = {}
+_EARN_TS: float = 0.0
+
+
 def earnings_map(days: int = MAX_DTE + 7) -> dict:
+    global _EARN, _EARN_TS
+    if _EARN and (time.time() - _EARN_TS) < 21600:
+        return dict(_EARN)
+    if not _EARN_LOCK.acquire(blocking=False):
+        # Somebody else is already refreshing the calendar.  Waiting for it would
+        # put a share price, a technical and a calendar on the same critical
+        # path, so the ticker gets what we already know and moves on.
+        return dict(_EARN)
+
     def load():
         out = {}
         dates = []
@@ -319,18 +377,32 @@ def earnings_map(days: int = MAX_DTE + 7) -> dict:
             d += timedelta(days=1)
             if d.weekday() < 5:
                 dates.append(d.isoformat())
-        for ds in dates:
-            j = http.json(f"https://api.nasdaq.com/api/calendar/earnings?date={ds}",
-                          headers={"Accept": "application/json"}, timeout=(5, 12))
-            if not j:
-                continue
-            for row in ((j.get("data") or {}).get("rows") or []):
-                sym = (row.get("symbol") or "").upper()
-                if sym:
+        # One day at a time cost up to 12s per day, so a calendar that was slow
+        # or refused us could hold a single ticker for minutes -- it was the
+        # largest single cost in a scan cycle.  The days are independent, so
+        # they are asked together and the whole set gets one deadline.
+        from concurrent.futures import ThreadPoolExecutor, wait
+
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            futs = {ex.submit(_earn_day, ds): ds for ds in dates}
+            done, _ = wait(list(futs.keys()), timeout=10.0)
+            for f in done:
+                ds = futs[f]
+                try:
+                    syms = f.result(timeout=0.5)
+                except Exception:
+                    syms = []
+                for sym in syms:
                     out[sym] = ds
         return out or None
 
-    return cache.wrap("earn:map", 21600, load) or {}
+    try:
+        val = cache.wrap("earn:map", 21600, load) or {}
+        _EARN = dict(val)
+        _EARN_TS = time.time()
+        return dict(_EARN)
+    finally:
+        _EARN_LOCK.release()
 
 
 # --------------------------------------------------------------------------- #
@@ -958,6 +1030,7 @@ def analyze(sym: str) -> dict | None:
 
 
 def _analyze_inner(sym: str) -> dict | None:
+    _T0 = time.time()
     # The four slowest steps are independent network fetches, so run them
     # together instead of one after another.  On a free instance this is the
     # difference between a scan that finishes and one that appears to hang.
@@ -983,8 +1056,10 @@ def _analyze_inner(sym: str) -> dict | None:
         except Exception:
             return fallback
 
-    pool = ThreadPoolExecutor(max_workers=4)
+    pool = ThreadPoolExecutor(max_workers=5)
+    _T = {}
     try:
+        _t0 = time.time()
         f_daily = pool.submit(data.daily, sym)
         f_intra = pool.submit(data.intraday, sym)
         f_chain = pool.submit(data.chain, sym)
@@ -993,6 +1068,21 @@ def _analyze_inner(sym: str) -> dict | None:
         intra = take(f_intra, None)
         ch = take(f_chain, None)
         name = take(f_name, "")
+        # The news fan-out starts here, while the price fetches above are still
+        # running, instead of strictly after them.  The ticker then waits for
+        # the slower of the two instead of for their sum -- on a slow instance
+        # that alone is ~20s per ticker, and ~75s over the watchlist.
+        f_news = pool.submit(news.for_ticker, sym, name)
+        _T["fetch"] = int((time.time() - _t0) * 1000)
+        try:
+            ns = f_news.result(timeout=18.0)
+        except FTimeout:
+            log.warning("analyze %s: news deadline hit -- continuing without it", sym)
+            ns = {}
+        except Exception as ex:
+            log.info("analyze %s: news failed (%s)", sym, type(ex).__name__)
+            ns = {}
+        _T["news"] = int((time.time() - _t0) * 1000) - _T["fetch"]
     finally:
         # do not block on stragglers: the scan must keep moving even if one
         # worker thread is still stuck on a dead connection
@@ -1019,25 +1109,11 @@ def _analyze_inner(sym: str) -> dict | None:
     hv_gk = quant.vol_garman_klass(d["Open"], d["High"], d["Low"], d["Close"], 30) if len(d) > 35 else hv_close
     sigma_hist = float(np.clip(np.mean([hv_close, hv_park, hv_gk]), 0.03, 3.0))
 
-    # News runs on its own thread with a deadline: it fans out to a dozen
-    # publisher feeds, and one unresponsive site must not hold up the ticker.
-    from concurrent.futures import ThreadPoolExecutor as _TPE, TimeoutError as _FTO
-
-    _nat = _TPE(max_workers=1)
-    try:
-        _fut = _nat.submit(news.for_ticker, sym, name)
-        ns = _fut.result(timeout=25.0)
-    except _FTO:
-        log.warning("analyze %s: news took longer than 25s -- continuing without it", sym)
-        ns = {}
-    except Exception as ex:
-        log.info("analyze %s: news failed (%s)", sym, type(ex).__name__)
-        ns = {}
-    finally:
-        _nat.shutdown(wait=False)
+    _t0 = time.time()
     c_sig, c_info = flow_signal(d, intra, ch)
-    d_sig, d_info = tech_signal(d, cache.wrap("d:SPY", 900, lambda: data.daily("SPY")))
+    d_sig, d_info = tech_signal(d, _spy_benchmark())
     e_sig, e_info = news_signal(ns)
+    _T["signals"] = int((time.time() - _t0) * 1000)
     # every signal is forced finite here: one NaN from a feed must not be able to
     # reach the drift (mu) and quietly turn a whole simulation into NaN
     c_sig, d_sig, e_sig = nz(c_sig), nz(d_sig), nz(e_sig)
@@ -1086,8 +1162,10 @@ def _analyze_inner(sym: str) -> dict | None:
         _net = (0.34 * c_sig + 0.46 * d_sig) / _w0
     net = float(np.clip(nz(_net), -1, 1))
     bias = "CALL" if net >= 0 else "PUT"
+    _t0 = time.time()
     emap = earnings_map()
     earn = emap.get(sym)
+    _T["earn"] = int((time.time() - _t0) * 1000)
 
     atm_iv, iv30 = sigma_hist, None
     if ch and ch.get("rows"):
@@ -1126,6 +1204,8 @@ def _analyze_inner(sym: str) -> dict | None:
                 iv_rank=round(ivr, 1), iv_pct=round(ivp, 1), vrp=round(vrp, 1),
                 sigma_hist=round(sigma_hist * 100, 1),
                 earnings=earn, calls=[], puts=[], error=None)
+    _T["total"] = int((time.time() - _T0) * 1000)
+    base["timings"] = _T
 
     if not (ch and ch.get("rows")):
         base.update(error="ไม่มีข้อมูลออปชัน (CBOE) สำหรับหุ้นนี้", verdict="NONE", omega=0.0)
@@ -1152,13 +1232,17 @@ def _analyze_inner(sym: str) -> dict | None:
 
     sigma_mix = float(np.clip(0.65 * atm_iv + 0.35 * sigma_hist, 0.03, 4.0))
     mu = RF + 0.10 * net
+    _t0 = time.time()
     simset = sim.simulate(spot, T, n_days, sigma_mix, mu, logret, sims=SIMS, seed=_seed(sym) % 2_000_000_000)
+    _T["sim"] = int((time.time() - _t0) * 1000)
+    _t0 = time.time()
     dist = sim.hist_distributions(close, high, low, n_days, HIST_WINDOW)
     # The same rolling study over the *whole* downloaded history (up to two
     # years).  This is the source of the headline probability: it is a count of
     # what actually happened, so a bigger sample is strictly better, while the
     # six-month window is kept for the wording and the recent-vs-older split.
     dist_full = sim.hist_distributions_full(close, high, low, n_days, 504)
+    _T["hist"] = int((time.time() - _t0) * 1000)
     months = 6
     em = quant.expected_move(spot, sigma_mix, T)
 
@@ -1799,7 +1883,7 @@ _TICKER_KEEP = (
     "iv_rank", "iv_pct", "vrp", "sigma_hist", "sigma_model", "earnings",
     "expected_move", "em_low", "em_high", "expiry", "dte", "n_days",
     "reliability", "omega", "verdict", "error", "hist", "regime", "tech",
-    "flow", "iv30", "move_stats", "expiries", "expiry_list",
+    "flow", "iv30", "move_stats", "expiries", "expiry_list", "timings",
 )
 
 
@@ -1942,6 +2026,11 @@ def _scan_once_locked() -> None:
     items, errs, cands = [], [], []
     total = len(WATCHLIST)
     _HEARTBEAT["t"] = time.time()
+    # The two shared extras -- the earnings calendar and the market benchmark --
+    # are warmed in the background so the tickers do not queue behind them on
+    # the critical path of the cycle.
+    for _warm in (earnings_map, _spy_benchmark):
+        threading.Thread(target=_warm, daemon=True, name="omega-warm").start()
     with _STATE_LOCK:
         STATE["progress"] = dict(done=0, total=total, current="")
         STATE["universe"] = list(WATCHLIST)
