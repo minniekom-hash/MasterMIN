@@ -269,41 +269,95 @@ class Breaker:
 breaker = Breaker()
 
 
+# --------------------------------------------------------------------------- #
+# name resolution with a deadline
+# --------------------------------------------------------------------------- #
+# A name lookup is the one part of a request that no timeout covers: the
+# socket timeout only starts once the address has been resolved.  On the
+# platform this runs on, the resolver stops answering from time to time -- and
+# a lookup that never returns parks the thread that asked for it, which is how
+# a whole scan used to stop making progress with no CPU being used at all.
+#
+# So every lookup goes through here: it is cached, it has a deadline, and when
+# the deadline passes the caller is told the name could not be resolved
+# instead of waiting for a resolver that is not answering.  A failed lookup
+# then counts as a failed request, the circuit breaker opens, and the fallback
+# providers take over.
+_REAL_GETADDRINFO = socket.getaddrinfo
+_DNS_CACHE: dict = {}
+_DNS_INFLIGHT: dict = {}
+_DNS_LOCK = threading.Lock()
+_DNS_PENDING = 0
+# Enough lookups in flight to keep the work going, few enough that a broken
+# resolver cannot pile up an unbounded number of stuck threads.
+DNS_MAX_PENDING = 16
+DNS_TIMEOUT = 4.0
+DNS_TTL = 60.0
+
+
+def _getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    """socket.getaddrinfo, with a cache, a deadline and a single flight.
+
+    Several threads asking for the same name at once share one lookup: the
+    first one does the work and the others wait for its answer, instead of
+    each starting a lookup of their own and multiplying the load on a resolver
+    that may already be struggling.
+    """
+    global _DNS_PENDING
+    key = (host, port, family, type, proto, flags)
+    with _DNS_LOCK:
+        hit = _DNS_CACHE.get(key)
+        if hit and (time.time() - hit[0]) < DNS_TTL:
+            return hit[1]
+        ev = _DNS_INFLIGHT.get(key)
+        owner = ev is None
+        if owner:
+            if _DNS_PENDING >= DNS_MAX_PENDING:
+                raise socket.gaierror(socket.EAI_AGAIN, "too many lookups in flight")
+            ev = threading.Event()
+            _DNS_INFLIGHT[key] = ev
+            _DNS_PENDING += 1
+    if not owner:
+        # Somebody else is already resolving this name: wait for their answer.
+        if not ev.wait(timeout=DNS_TIMEOUT):
+            raise socket.gaierror(socket.EAI_AGAIN, "name resolution timed out")
+        with _DNS_LOCK:
+            hit = _DNS_CACHE.get(key)
+        if hit:
+            return hit[1]
+        raise socket.gaierror(socket.EAI_AGAIN, "name resolution failed")
+
+    out = []
+
+    def _go():
+        try:
+            out.append(_REAL_GETADDRINFO(host, port, family, type, proto, flags))
+        except Exception as ex:
+            out.append(ex)
+
+    th = threading.Thread(target=_go, daemon=True, name="omega-dns")
+    th.start()
+    th.join(timeout=DNS_TIMEOUT)
+    with _DNS_LOCK:
+        _DNS_PENDING -= 1
+        _DNS_INFLIGHT.pop(key, None)
+        if out and not isinstance(out[0], Exception):
+            _DNS_CACHE[key] = (time.time(), out[0])
+    ev.set()
+    if not out:
+        # The resolver is not answering.  Say so, do not wait for it.
+        raise socket.gaierror(socket.EAI_AGAIN, "name resolution timed out")
+    res = out[0]
+    if isinstance(res, Exception):
+        raise res
+    return res
+
+
+socket.getaddrinfo = _getaddrinfo
+
+
 class Http:
     """Tiny requests wrapper: retries, per-host stats, breaker, connection cap."""
-
-    # A name lookup is the one part of a request that the connect timeout does
-    # not cover: the socket timeout only starts once the address is resolved.
-    # When the resolver is slow -- which happens on a free instance -- that is
-    # enough to wedge an entire scan, because nothing else in the request has
-    # a deadline.  So the lookup gets its own short one, and a host that does
-    # not resolve is remembered for a while instead of being looked up again
-    # for every ticker.
-    _dns: dict = {}
-    _dns_lock = threading.Lock()
-
-    @classmethod
-    def _resolves(cls, host: str) -> bool:
-        with cls._dns_lock:
-            hit = cls._dns.get(host)
-            if hit and (time.time() - hit[0]) < 60:
-                return hit[1]
-        out = []
-
-        def _go():
-            try:
-                socket.getaddrinfo(host, None)
-                out.append(True)
-            except Exception:
-                out.append(False)
-
-        th = threading.Thread(target=_go, daemon=True, name="omega-dns")
-        th.start()
-        th.join(timeout=4.0)
-        ok = bool(out and out[0])
-        with cls._dns_lock:
-            cls._dns[host] = (time.time(), ok)
-        return ok
 
     def __init__(self, max_concurrency: int = 24) -> None:
         # The cap must sit comfortably above the number of threads that can ask
@@ -346,14 +400,6 @@ class Http:
         """Return the requests.Response or None. Never raises."""
         host = url.split("/")[2] if "://" in url else url
         if not breaker.allow(host):
-            return None
-        if not self._resolves(host):
-            # The name did not resolve in time.  Treat it as a failure so the
-            # circuit breaker and the fallbacks take over, instead of waiting
-            # on a resolver that is not answering.
-            breaker.fail(host)
-            log.info("DNS slow for %s -- skipping", host)
-            self._bump(host, False, 0)
             return None
         hdrs = {"User-Agent": SEC_UA if sec else random.choice(BROWSER_UAS),
                 "Accept": "*/*", "Accept-Language": "en-US,en;q=0.9",
