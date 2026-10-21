@@ -419,7 +419,10 @@ def _attribute(it: dict, feed: str) -> str:
 def ticker_feeds(sym: str):
     out = []
     with ThreadPoolExecutor(max_workers=4) as ex:
-        futs = {ex.submit(fetch_feed, tpl.format(sym=sym)): name for name, tpl in TICKER_FEEDS}
+        # 40 per feed is plenty of headlines and keeps the de-dup/sentiment
+        # pass cheap; a busy query can return a hundred near-duplicates.
+        futs = {ex.submit(fetch_feed, tpl.format(sym=sym), limit=40): name
+                for name, tpl in TICKER_FEEDS}
         for f in futs:
             name = futs[f]
             try:
@@ -685,6 +688,18 @@ def fact_check(items):
 # --------------------------------------------------------------------------- #
 ENRICH_N = 2
 
+# Aggregator links point at a redirect wrapper, not at the article.  Opening
+# one costs a full connect+read cycle and returns a JavaScript stub with no
+# text in it, so every enriched aggregator item was a timeout waiting to
+# happen.  Their RSS snippet is used as-is instead, and only real publisher
+# pages are opened.
+_REDIRECT_HOSTS = ("news.google.com", "bing.com", "msn.com", "news.yahoo.com/rss")
+
+
+def _is_wrapper(url: str) -> bool:
+    u = (url or "").lower()
+    return any(h in u for h in _REDIRECT_HOSTS)
+
 
 def nz_age(v, default: float = 24.0) -> float:
     """Hours since publication, never None and never negative.
@@ -733,6 +748,7 @@ def for_ticker(sym: str, name: str = "") -> dict:
         # news call for minutes, and the scan only waits 25s before giving up on
         # the whole feed set.
         head = sorted(dedup, key=lambda i: i["age"])[:max(ENRICH_N, 0)]
+        head = [it for it in head if not _is_wrapper(it.get("url", ""))]
 
         def _read(it):
             d, txt, why = cache.wrap("art:" + it.get("url", ""), 3600,
@@ -745,7 +761,7 @@ def for_ticker(sym: str, name: str = "") -> dict:
                 for f in futs:
                     it = futs[f]
                     try:
-                        d, txt, why = f.result(timeout=20.0)
+                        d, txt, why = f.result(timeout=12.0)
                     except Exception:
                         d, txt, why = "none", "", "หมดเวลาอ่านบทความ"
                     it.update(depth=d, body=txt, why=why)
