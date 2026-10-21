@@ -132,6 +132,17 @@
   .pick,.leg{transition:transform .15s ease, box-shadow .15s ease}
   .pick:hover,.leg:hover{transform:translateY(-1px);box-shadow:0 10px 26px rgba(0,0,0,.35)}
   .mono,.kpi .v{font-variant-numeric:tabular-nums}
+
+  /* live chart */
+  .chartbox{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+            padding:12px 14px;margin-top:10px}
+  .chartbox .chead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+  .chartbox .chead .cp{font-size:22px;font-weight:700;line-height:1.1}
+  .chartbox canvas{width:100%;height:190px;display:block;border-radius:8px;background:#080c11}
+  .chartbox .cfoot{display:flex;gap:12px;flex-wrap:wrap;margin-top:7px}
+  .chartbox .live-dot{width:7px;height:7px;border-radius:50%;background:var(--green);
+                      display:inline-block;margin-right:5px;animation:pulse 2s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
 </style>
 </head>
 <body>
@@ -342,6 +353,139 @@ function renderKpis(it){
 }
 const kpi = (k,v,cls) => '<div class="kpi"><span class="k">'+esc(k)+'</span><span class="v '+(cls||'')+'">'+esc(v)+'</span></div>';
 
+/* ---------------------------------------------------------------- live chart */
+/* The candles are the prices that actually traded, one a minute, straight from
+   the exchange feed.  The chart asks for a new one every fifteen seconds. */
+let CHART_LAST = null;
+const CHARTS = {};
+
+function chartBox(sym, id){
+  return '<div class="chartbox" id="'+id+'">'+
+    '<div class="chead">'+
+      '<span class="cp mono" id="'+id+'_px">—</span>'+
+      '<span class="tiny dim" id="'+id+'_chg"></span>'+
+      '<span class="spacer" style="flex:1"></span>'+
+      '<span class="tiny dim" id="'+id+'_src">กำลังโหลดกราฟ…</span>'+
+    '</div>'+
+    '<canvas id="'+id+'_cv"></canvas>'+
+    '<div class="cfoot tiny dim" id="'+id+'_foot"></div>'+
+  '</div>';
+}
+
+function drawChart(cv, d){
+  if(!cv) return;
+  const w = cv.clientWidth || 600, h = cv.clientHeight || 190;
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(w*dpr); cv.height = Math.round(h*dpr);
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,w,h);
+  const bars = (d && d.bars) || [];
+  if(bars.length < 2){
+    ctx.fillStyle = '#6d7787'; ctx.font = '12px system-ui';
+    ctx.fillText('ยังไม่มีข้อมูลราคานาที', 12, 24);
+    return;
+  }
+  const vals = bars.map(b => b[1]);
+  let min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+  const base = (d.prev != null) ? d.prev : vals[0];
+  min = Math.min(min, base); max = Math.max(max, base);
+  const pad = (max-min) * 0.15 || (max*0.002) || 0.01;
+  min -= pad; max += pad;
+  const L = 52, R = 10, T = 12, B = 20;
+  const X = i => L + (w - L - R) * (i/(bars.length-1));
+  const Y = v => T + (h - T - B) * (1 - (v-min)/(max-min));
+  const up = (d.change||0) >= 0;
+  const col = up ? '#35d08a' : '#ff6b6b';
+
+  ctx.strokeStyle = '#1b2430'; ctx.lineWidth = 1;
+  ctx.fillStyle = '#6d7787'; ctx.font = '10px ui-monospace,monospace';
+  for(let g=0; g<=3; g++){
+    const y = T + (h-T-B)*g/3;
+    ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(w-R, y); ctx.stroke();
+    const val = max - (max-min)*g/3;
+    ctx.fillText(val.toFixed(val>=100?1:2), 6, y+3);
+  }
+  // the previous close, so "up today" is visible on the chart itself
+  if(d.prev != null){
+    ctx.save(); ctx.setLineDash([3,4]); ctx.strokeStyle = '#4a5566';
+    const yb = Y(d.prev);
+    ctx.beginPath(); ctx.moveTo(L, yb); ctx.lineTo(w-R, yb); ctx.stroke(); ctx.restore();
+  }
+  // the price line
+  ctx.beginPath();
+  bars.forEach((b,i) => { const x = X(i), y = Y(b[1]); i ? ctx.lineTo(x,y) : ctx.moveTo(x,y); });
+  ctx.strokeStyle = col; ctx.lineWidth = 1.6; ctx.stroke();
+  // a soft fill under it
+  ctx.lineTo(X(bars.length-1), h-B); ctx.lineTo(X(0), h-B); ctx.closePath();
+  ctx.fillStyle = up ? 'rgba(53,208,138,.10)' : 'rgba(255,107,107,.10)';
+  ctx.fill();
+  // the last price
+  const lx = X(bars.length-1), ly = Y(bars[bars.length-1][1]);
+  ctx.beginPath(); ctx.arc(lx, ly, 3, 0, Math.PI*2);
+  ctx.fillStyle = col; ctx.fill();
+  // time labels
+  ctx.fillStyle = '#5b6675';
+  const f = new Date(bars[0][0]*1000);
+  const l = new Date(bars[bars.length-1][0]*1000);
+  const hm = d => String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  ctx.fillText(hm(f), L, h-6);
+  const rt = hm(l);
+  ctx.fillText(rt, w-R-ctx.measureText(rt).width, h-6);
+}
+
+async function refreshChart(sym, boxId){
+  if(!sym) return;
+  try{
+    const r = await fetch('/api/chart/'+encodeURIComponent(sym), {headers:{'Accept':'application/json'}});
+    const j = await r.json();
+    if(j && j.error){ setChartFoot(boxId, j.error); return; }
+    CHART_LAST = j;
+    if(CHARTS[boxId]) CHARTS[boxId].data = j;
+    const px = document.getElementById(boxId+'_px');
+    if(px){
+      px.textContent = '$' + num(j.price, 2);
+      const chg = document.getElementById(boxId+'_chg');
+      if(chg){
+        const c = j.change||0;
+        chg.className = 'tiny mono ' + (c>=0?'up':'down');
+        chg.textContent = (c>=0?'+':'') + num(c,2) + '% · สูง ' + num(Math.max.apply(null, j.bars.map(b=>b[1])),2) +
+                          ' · ต่ำ ' + num(Math.min.apply(null, j.bars.map(b=>b[1])),2);
+      }
+      const src = document.getElementById(boxId+'_src');
+      if(src) src.innerHTML = '<span class="live-dot"></span>' + esc(j.source||'') + ' · อัปเดท ' + esc(ago(new Date(j.ts*1000).toISOString()));
+      drawChart(document.getElementById(boxId+'_cv'), j);
+      setChartFoot(boxId, 'ข้อมูลจริงจากตลาด · ' + (j.bars||[]).length + ' แท่งนาที');
+    }
+  }catch(e){ setChartFoot(boxId, 'ดึงกราฟไม่สำเร็จ: ' + e.message); }
+}
+
+function setChartFoot(boxId, txt){
+  const f = document.getElementById(boxId+'_foot');
+  if(f) f.textContent = txt;
+}
+
+function startChart(sym, boxId){
+  if(!sym) return;
+  const cur = CHARTS[boxId];
+  if(cur && cur.sym === sym) return;
+  if(cur && cur.timer) clearInterval(cur.timer);
+  refreshChart(sym, boxId);
+  CHARTS[boxId] = {sym:sym, timer:setInterval(()=>refreshChart(sym, boxId), 15000)};
+}
+
+/* redraw on resize so the chart is not stretched */
+let _rz;
+window.addEventListener('resize', ()=>{
+  clearTimeout(_rz);
+  _rz = setTimeout(()=>{
+    Object.keys(CHARTS).forEach(id=>{
+      const cv = document.getElementById(id+'_cv');
+      if(cv && CHARTS[id].data) drawChart(cv, CHARTS[id].data);
+    });
+  }, 200);
+});
+
 /* every (ticker, expiry, side) with a pick, scored honestly */
 function allPicks(it){
   const out = [];
@@ -515,6 +659,7 @@ function renderDetail(r){
 
   let html = '';
   html += '<div class="banner tiny">คลิกวันหมดอายุเพื่อดูคำตอบของวันนั้น — แต่ละวันคำนวณจากระยะเวลาจริงของมันเอง</div>';
+  html += chartBox(r.ticker, 'detChart');
   html += newsStateBanner(r);
   html += '<div class="tabs" id="exTabs">'+dates.map((d,i)=>
       '<div class="tab'+(i===0?' on':'')+'" data-ex="'+esc(d)+'">'+
@@ -542,6 +687,7 @@ function renderDetail(r){
 
   $('#dBody').innerHTML = html;
   renderExpiry();
+  startChart(r.ticker, 'detChart');
   $('#exTabs').addEventListener('click', e=>{
     const t = e.target.closest('[data-ex]'); if(!t) return;
     window._SEL = t.getAttribute('data-ex');
@@ -746,6 +892,8 @@ function renderPos(j){
     ' · เทคนิค '+(t.call||0)+' ชี้ CALL / '+(t.put||0)+' ชี้ PUT'+
     ' · วันหมดอายุ '+esc(j.expiry)+' (อีก '+num(j.dte,0)+' วัน)'+
     ' · ราคา ณ '+ago(j.asof)+'</div>';
+  // The live tape: the prices that actually traded, refreshed every 15 seconds.
+  h += chartBox(j.ticker, 'posChart');
   (j.badges||[]).forEach(b=>{
     h += '<div class="banner warn tiny" style="margin-top:6px">'+esc(b)+'</div>';
   });
@@ -756,6 +904,25 @@ function renderPos(j){
   h += evidenceBlock(j);
   h += '<div class="note" style="margin-top:8px">'+esc(j.note||'')+'</div>';
   $('#pOut').innerHTML = h;
+  // draw what we already have straight away, then keep it fresh
+  if(j.live && (j.live.bars||[]).length > 1){
+    const cv = document.getElementById('posChart_cv');
+    if(cv){
+      drawChart(cv, j.live);
+      const px = document.getElementById('posChart_px');
+      if(px) px.textContent = '$' + num(j.live.price, 2);
+      const chg2 = document.getElementById('posChart_chg');
+      if(chg2 && j.live.change != null){
+        chg2.className = 'tiny mono ' + (j.live.change>=0?'up':'down');
+        chg2.textContent = (j.live.change>=0?'+':'') + num(j.live.change,2) + '%';
+      }
+      const src = document.getElementById('posChart_src');
+      if(src) src.innerHTML = '<span class="live-dot"></span>'+esc(j.live.source||'')+
+        ' · อัปเดท '+esc(ago(new Date(j.live.ts*1000).toISOString()));
+      setChartFoot('posChart', 'ข้อมูลจริงจากตลาด · ' + (j.live.bars||[]).length + ' แท่งนาที');
+    }
+  }
+  startChart(j.ticker, 'posChart');
 }
 
 function whyCard(side, list, tally){

@@ -22,7 +22,7 @@ import time
 from flask import (Flask, jsonify, redirect, render_template_string, request,
                    session, url_for)
 
-from omega import engine, news, track
+from omega import data, engine, news, track
 from omega.data import chain, daily, provider_status, yahoo_price
 from omega.engine import REFRESH_SEC, STATE
 from omega.util import VERSION, cache, clean, http, now_iso
@@ -501,6 +501,27 @@ def api_threads():
 @app.route("/api/track")
 def api_track():
     return jsonify(clean(track.scoreboard()))
+
+
+@app.route("/api/chart/<t>")
+def api_chart(t: str):
+    """Real one-minute candles for the live chart.
+
+    This is the tape itself -- the prices that actually traded -- not a
+    drawing of them.  The cache is short, so a chart asking every fifteen
+    seconds gets a new bar instead of the same one again.
+    """
+    sym = re.sub(r"[^A-Za-z]", "", t).upper()[:6]
+    if not sym:
+        return jsonify(error="ใส่ ticker หุ้นสหรัฐ เช่น SOFI"), 400
+    try:
+        d = data.live_chart(sym, minutes=90, ttl=10)
+    except Exception as ex:
+        log.warning("chart %s: %s", sym, ex)
+        return jsonify(error=f"{type(ex).__name__}: {str(ex)[:120]}"), 502
+    if not d:
+        return jsonify(error="ยังไม่มีข้อมูลราคานาทีของหุ้นนี้"), 404
+    return jsonify(clean(d))
 
 
 @app.route("/api/position")
