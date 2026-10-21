@@ -311,7 +311,8 @@ def hist_distributions_full(close, high, low, n_days: int, window: int = 504) ->
                 recent=rel[half:], older=rel[:half], split=half)
 
 
-def hist_outcome(dist: dict, kind: str, strike: float, spot: float, premium: float) -> dict | None:
+def hist_outcome(dist: dict, kind: str, strike: float, spot: float, premium: float,
+                 tail: int | None = None) -> dict | None:
     """How the *exact* trade would have finished, counted on real prices.
 
     For every entry day in the window we hold the same contract until expiry and
@@ -323,9 +324,26 @@ def hist_outcome(dist: dict, kind: str, strike: float, spot: float, premium: flo
 
     Nothing here is modelled, sampled or assumed: it is a count over realised
     closes and highs/lows.
+
+    ``tail`` restricts the count to the most recent N windows, which is how the
+    "last 6 months" and "last 12 months" figures are produced without a second
+    download -- the arrays are chronological, so the tail is the recent history.
     """
     if not dist:
         return None
+    if tail:
+        tail = int(tail)
+        if 0 < tail < len(dist["rel"]):
+            half = tail // 2
+            dist = dict(dist)
+            for k in ("rel", "up_exc", "dn_exc", "entry", "exit", "fmax", "fmin"):
+                if isinstance(dist.get(k), np.ndarray):
+                    dist[k] = dist[k][-tail:]
+            rel = dist["rel"]
+            dist["recent"] = rel[half:]
+            dist["older"] = rel[:half]
+            dist["span_days"] = tail
+            dist["n"] = tail
     up = kind == "CALL"
     d_req = strike / spot - 1.0
     be = strike + premium if up else strike - premium

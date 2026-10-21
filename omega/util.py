@@ -22,7 +22,7 @@ from urllib3.util.retry import Retry
 
 log = logging.getLogger("omega")
 
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 
 CONTACT = os.environ.get("CONTACT_EMAIL", "omega.research@example.com")
 
@@ -106,7 +106,7 @@ def now_iso() -> str:
 
 
 def age_hours(ts) -> float:
-    """Age in hours of an epoch number, ISO string or RFC-822 date string."""
+    """Age in hours of an epoch number, ISO-8601 string or RFC-822 date string."""
     try:
         if ts is None or ts == "":
             return 24.0
@@ -119,13 +119,14 @@ def age_hours(ts) -> float:
             s = str(ts).strip()
             if s.isdigit():
                 return age_hours(int(s))
-            if "T" in s or "-" in s:
-                s2 = s.replace("Z", "+00:00")
-                try:
-                    d = datetime.fromisoformat(s2)
-                except ValueError:
-                    d = datetime.strptime(s[:19], "%Y-%m-%d %H:%M:%S")
-            else:
+            # ISO first, by trying it rather than sniffing the text.  Sniffing for
+            # a literal "T" looks reasonable until you meet RSS dates like
+            # "Fri, 16 Oct 2026 11:15:36 GMT" -- GMT contains a T, so every feed
+            # item was sent to the ISO parser, failed, and was aged at the 24h
+            # default.  That made stale news look a day old and hid its date.
+            try:
+                d = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            except ValueError:
                 from email.utils import parsedate_to_datetime
 
                 d = parsedate_to_datetime(s)

@@ -140,6 +140,63 @@ def tech_signal(daily: pd.DataFrame, spy: pd.DataFrame | None = None):
     return float(np.clip(nz(sig), -1, 1)), info
 
 
+def tech_votes(info: dict) -> list:
+    """One row per technique, so the direction can be audited line by line.
+
+    When there is no news this table *is* the reasoning, so every row has to be
+    readable by someone who does not code: the technique, which way it leans,
+    and the number that produced that lean.
+    """
+    if not info:
+        return []
+    rows = []
+
+    def add(name: str, score: float, why: str):
+        score = float(np.clip(nz(score, 0.0), -1, 1))
+        rows.append(dict(name=name,
+                         dir="CALL" if score > 0.12 else ("PUT" if score < -0.12 else "กลาง"),
+                         score=round(score, 2), why=why))
+
+    st = nz(info.get("stack"), 0)
+    add("EMA 9/21/50 เรียงตัว", st,
+        "เรียงขึ้นครบ 9>21>50" if st > 0 else
+        ("เรียงลงครบ 9<21<50" if st < 0 else "ยังสลับกัน ไม่มีแนวโน้มชัด"))
+
+    r = nz(info.get("rsi"), 50.0)
+    div = nz(info.get("rsi_div"), 0)
+    add("RSI(14)", (r - 50) / 25 * 0.7 + 0.3 * div,
+        f"RSI {r:.0f}"
+        + (" + ไดเวอร์เจนซ์กลับตัวขึ้น" if div > 0 else
+           (" + ไดเวอร์เจนซ์กลับตัวลง" if div < 0 else "")))
+
+    mh = nz(info.get("macd_hist"), 0.0)
+    add("MACD histogram", np.clip(mh * 4, -1, 1), f"แท่ง histogram {mh:+.3f}")
+
+    adx, pdi, mdi = nz(info.get("adx"), 0.0), nz(info.get("pdi"), 0.0), nz(info.get("mdi"), 0.0)
+    add("ADX / DI ทิศทาง", (1.0 if pdi > mdi else -1.0) * min(adx / 25.0, 1.0),
+        f"ADX {adx:.0f} · DI+ {pdi:.0f} / DI- {mdi:.0f}")
+
+    stoch = nz(info.get("stoch"), 50.0)
+    add("Stochastic", np.clip((stoch - 50) / 40, -1, 1), f"Stoch {stoch:.0f}")
+
+    m21, m63 = nz(info.get("mom21"), 0.0), nz(info.get("mom63"), 0.0)
+    add("โมเมนตัม 1–3 เดือน",
+        np.clip(m21 * 8, -1, 1) * 0.6 + np.clip(m63 * 4, -1, 1) * 0.4,
+        f"1 เดือน {m21:+.1f}% · 3 เดือน {m63:+.1f}%")
+
+    rs = nz(info.get("rs_spy"), 0.0)
+    add("แข็งแรงกว่า SPY", np.clip(rs * 6, -1, 1), f"{rs:+.1f}% เทียบ SPY")
+
+    pb = nz(info.get("pb"), 0.5)
+    # Bollinger position is mean-reverting: hugging the top band is stretched,
+    # not bullish, so the vote points the other way.
+    add("ตำแหน่ง Bollinger", np.clip((0.5 - pb) * 1.6, -1, 1),
+        f"อยู่ที่ {pb * 100:.0f}% ของกรอบ"
+        + (" (ชิดกรอบบน = ตึงตัว)" if pb > 0.9 else
+           (" (ชิดกรอบล่าง = ตึงตัว)" if pb < 0.1 else "")))
+    return rows
+
+
 def flow_signal(daily: pd.DataFrame, intra: pd.DataFrame, chain: dict | None):
     if daily.empty or len(daily) < 25:
         return 0.0, {}
@@ -445,6 +502,17 @@ def build_strike(sym: str, row_c: dict, spot: float, kind: str, dte: float, n_da
         r["pop_hi"] = outcome["hist_win_hi"]
         r["pop_source"] = "จริง"               # real history
         r.update(outcome)
+        # The same count over the last six and twelve months, so a recent change
+        # in behaviour is visible instead of being averaged away by two years of
+        # history.  126 and 252 windows are 6 and 12 months of trading days.
+        for _lab, _tail in (("6m", 126), ("12m", 252)):
+            _w = sim.hist_outcome(dist_full, kind, strike, spot, premium, tail=_tail)
+            if _w and _w.get("hist_win") is not None:
+                r[f"hist_{_lab}_win"] = _w["hist_win"]
+                r[f"hist_{_lab}_n"] = _w["hist_n"]
+                r[f"hist_{_lab}_pnl"] = _w["hist_avg_pnl"]
+                r[f"hist_{_lab}_count"] = _w["hist_win_count"]
+                r[f"hist_{_lab}_pf"] = _w["hist_profit_factor"]
         # ITM and touch are counts too now: the same historical windows already
         # say how often the level was reached and how often the option still had
         # value at expiry, so the page does not need the model for those either.
@@ -593,6 +661,8 @@ _STRIKE_SLIM = (
     "hist_touch", "hist_avg_pnl", "hist_median_pnl", "hist_best_pnl",
     "hist_worst_pnl", "hist_profit_factor", "hist_recent_win", "hist_older_win",
     "hist_recent_n", "p_zero", "avg_win", "edge_z", "edge_p", "edge_signif",
+    "hist_6m_win", "hist_6m_n", "hist_6m_pnl", "hist_6m_count", "hist_6m_pf",
+    "hist_12m_win", "hist_12m_n", "hist_12m_pnl", "hist_12m_count", "hist_12m_pf",
 )
 
 
@@ -971,8 +1041,50 @@ def _analyze_inner(sym: str) -> dict | None:
     # every signal is forced finite here: one NaN from a feed must not be able to
     # reach the drift (mu) and quietly turn a whole simulation into NaN
     c_sig, d_sig, e_sig = nz(c_sig), nz(d_sig), nz(e_sig)
-    net = float(np.clip(0.34 * c_sig + 0.46 * d_sig + 0.20 * e_sig, -1, 1))
-    net = nz(net)
+
+    # ---- how much of the news is actually new? -----------------------------
+    # A dead feed is not evidence of a quiet market.  When nothing arrives the
+    # news term contributes 0.0, which silently drags `net` toward zero and makes
+    # every ticker look equally undecided.  So freshness is measured first, and
+    # the news weight is either used or handed to the signals that do exist.
+    _items = ns.get("items") or []
+    _fresh = ns.get("fresh")
+    if _fresh is None:
+        _fresh = 0
+        for _it in _items:
+            # `age` is published by news.for_ticker; `h` is the rounded form kept
+            # for older payloads.  Unknown defaults to one day old, never stale.
+            _av = _it.get("age")
+            if _av is None:
+                _av = _it.get("h")
+            try:
+                _a = 24.0 if _av is None else float(_av)
+            except (TypeError, ValueError):
+                _a = 24.0
+            if _a <= 72:
+                _fresh += 1
+    else:
+        _fresh = int(_fresh)
+    if _fresh >= 3:
+        news_state, news_note = "มีข่าวใหม่", f"ข่าวใหม่ {_fresh} ชิ้นใน 72 ชม."
+    elif _fresh >= 1:
+        news_state, news_note = "ข่าวบาง", f"ข่าวใหม่เพียง {_fresh} ชิ้นใน 72 ชม."
+    elif _items:
+        news_state, news_note = "มีแต่ข่าวเก่า", "ข่าวที่ดึงได้เก่ากว่า 3 วันทั้งหมด"
+    else:
+        news_state, news_note = "ไม่มีข่าว", "ดึงข่าวไม่ได้เลยในรอบนี้"
+
+    if _fresh >= 1:
+        weights = dict(flow=0.34, tech=0.46, news=0.20)
+        _net = 0.34 * c_sig + 0.46 * d_sig + 0.20 * e_sig
+    else:
+        # Redistribute the news weight across flow and technicals while keeping
+        # their relative importance.  Skipping this is what made an empty feed
+        # look like a balanced market instead of an unknown one.
+        _w0 = 0.34 + 0.46
+        weights = dict(flow=round(0.34 / _w0, 3), tech=round(0.46 / _w0, 3), news=0.0)
+        _net = (0.34 * c_sig + 0.46 * d_sig) / _w0
+    net = float(np.clip(nz(_net), -1, 1))
     bias = "CALL" if net >= 0 else "PUT"
     emap = earnings_map()
     earn = emap.get(sym)
@@ -1002,6 +1114,9 @@ def _analyze_inner(sym: str) -> dict | None:
                 tech_score=round(float(np.clip(50 + 50 * d_sig, 0, 100)), 1),
                 flow_score=round(float(np.clip(50 + 50 * c_sig, 0, 100)), 1),
                 news_score=round(float(np.clip(50 + 50 * e_sig, 0, 100)), 1),
+                news_state=news_state, news_note=news_note, news_fresh=_fresh,
+                news_total=ns.get("n", len(_items)), weights=weights,
+                tech_votes=tech_votes(d_info),
                 news={k: v for k, v in e_info.items()},
                 news_detail=dict(items=ns.get("items", [])[:12], sources=ns.get("sources", {}),
                                  depth=ns.get("depth", {}), checks=ns.get("checks", []),
@@ -1210,6 +1325,18 @@ def _analyze_inner(sym: str) -> dict | None:
     base["reliability"] = round(float(np.clip(rel + 0.3 * (primary["reliability"] if primary else 0), 0, 100)), 1)
 
     guide = []
+    _tv = base.get("tech_votes") or []
+    _vc = sum(1 for r in _tv if r["dir"] == "CALL")
+    _vp = sum(1 for r in _tv if r["dir"] == "PUT")
+    base["tech_tally"] = dict(call=_vc, put=_vp, neutral=len(_tv) - _vc - _vp)
+    if _fresh >= 1:
+        guide.append(f"ข่าว: {news_state} — {news_note} "
+                     f"(น้ำหนักข่าว {weights['news'] * 100:.0f}%)")
+    else:
+        guide.append(f"⚠ ไม่มีข่าวใหม่ ({news_note}) — รอบนี้ตัดสินจากเทคนิค {_vc} ตัวชี้ CALL / "
+                     f"{_vp} ตัวชี้ PUT และผลชนะจริงย้อนหลัง 6–12 เดือน "
+                     f"โดยยกน้ำหนักข่าวไปให้กระแสเงินและเทคนิคแทน — "
+                     f"ไม่ได้หมายความว่าตลาดเงียบ แต่หมายความว่าเราไม่รู้ว่ามีอะไรเกิดขึ้น")
     guide.append(f"หุ้น {sym} ราคา ${spot:.2f} · แนวโน้ม {trend} · โมเมนตัม 21 วัน {d_info.get('mom21')}% "
                  f"· RSI {d_info.get('rsi')} · ADX {d_info.get('adx')}")
     guide.append(f"ความผันผวน: IV {atm_iv*100:.0f}% (อันดับ {ivr:.0f}/100 = {base['regime']['iv_tag']}) "
@@ -1234,6 +1361,10 @@ def _analyze_inner(sym: str) -> dict | None:
 
     # ---- the direct answer: which strike wins, and why ----------------------
     ans = []
+    if _fresh < 1:
+        ans.append(f"หมายเหตุสำคัญ: {news_note} — คำตอบด้านล่างจึงมาจากเทคนิค "
+                   f"{_vc} ตัวชี้ CALL / {_vp} ตัวชี้ PUT และการนับผลจริงย้อนหลัง "
+                   f"6–12 เดือน ไม่ได้มาจากข่าว")
     if top_call:
         ans.append(f"ถ้าถามว่า “CALL strike ไหนโอกาสชนะสูงสุด” → CALL ${top_call['strike']:g} "
                    f"(หมดอายุ {top_call['expiry']}) โอกาสชนะ {top_call['pop']:.0f}% "
@@ -1286,11 +1417,14 @@ _STRIKE_KEEP = (
     "hist_itm", "hist_touch", "hist_avg_pnl", "hist_median_pnl", "hist_best_pnl",
     "hist_worst_pnl", "hist_profit_factor", "hist_recent_win", "hist_older_win",
     "hist_recent_n", "p_zero", "avg_win", "fair_value", "hist_n_eff",
-    "edge_signif",
+    "edge_signif", "hist_6m_win", "hist_6m_n", "hist_6m_pnl", "hist_6m_count",
+    "hist_6m_pf", "hist_12m_win", "hist_12m_n", "hist_12m_pnl",
+    "hist_12m_count", "hist_12m_pf",
 )
 _TICKER_KEEP = (
     "ticker", "name", "spot", "spot_source", "chain_ts", "signal", "bias",
     "tech_score", "flow_score", "news_score", "news", "atm_iv", "iv30",
+    "news_state", "news_note", "news_fresh", "news_total", "weights", "tech_tally",
     "iv_rank", "iv_pct", "vrp", "sigma_hist", "sigma_model", "earnings",
     "expected_move", "em_low", "em_high", "expiry", "dte", "n_days",
     "reliability", "omega", "verdict", "error", "hist", "regime", "tech",
@@ -1340,6 +1474,7 @@ def compact_for_scan(r: dict) -> dict:
         "model_pop", "hist_win_count", "hist_avg_pnl", "hist_median_pnl",
         "hist_profit_factor", "hist_recent_win", "hist_older_win", "edge_signif",
         "volume", "oi", "iv_vs_atm",
+        "hist_6m_win", "hist_6m_n", "hist_12m_win", "hist_12m_n", "hist_12m_pnl",
     )
     hz = {}
     for k, v in (r.get("expiries") or {}).items():

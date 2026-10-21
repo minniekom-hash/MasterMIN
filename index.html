@@ -366,7 +366,10 @@ function renderWatch(it){
     const dir = x.signal>0.05?'CALL':x.signal<-0.05?'PUT':'กลาง';
     const good = (b.hist_avg_pnl||0)>0;
     return '<tr>'+
-      '<td><b>'+esc(x.ticker)+'</b><div class="tiny dim">'+esc((x.name||'').substr(0,20))+'</div></td>'+
+      '<td><b>'+esc(x.ticker)+'</b><div class="tiny dim">'+esc((x.name||'').substr(0,20))+'</div>'+
+        ((x.news_fresh||0)<1
+          ? '<div class="tiny" style="color:var(--amber)">ไม่มีข่าวใหม่</div>'
+          : '<div class="tiny dim">ข่าวใหม่ '+num(x.news_fresh,0)+'</div>')+'</td>'+
       '<td class="mono">'+money(x.spot)+'</td>'+
       '<td class="mono '+pcol(50+50*(x.signal||0))+'">'+num((x.signal||0)*100,0)+'</td>'+
       '<td><span class="tag '+(dir==='CALL'?'green':dir==='PUT'?'red':'grey')+'">'+dir+'</span></td>'+
@@ -475,6 +478,7 @@ function renderDetail(r){
 
   let html = '';
   html += '<div class="banner tiny">คลิกวันหมดอายุเพื่อดูคำตอบของวันนั้น — แต่ละวันคำนวณจากระยะเวลาจริงของมันเอง</div>';
+  html += newsStateBanner(r);
   html += '<div class="tabs" id="exTabs">'+dates.map((d,i)=>
       '<div class="tab'+(i===0?' on':'')+'" data-ex="'+esc(d)+'">'+
         esc(d)+' <span class="dim">· '+num(ex[d].dte,0)+' วัน</span></div>').join('')+'</div>';
@@ -486,6 +490,9 @@ function renderDetail(r){
     '<th>Strike</th><th>พรีเมียม</th><th>โอกาสชนะ</th><th>นับจริง</th><th>กำไรเฉลี่ย</th>'+
     '<th>ปริมาณ/OI</th><th>Spread</th><th>Δ</th><th>คะแนน</th></tr></thead><tbody>'+
     strikeRows((r.calls||[]).concat(r.puts||[]))+'</tbody></table></div>';
+
+  html += '<h3>เทคนิคที่ใช้ตัดสิน (แต่ละตัวโหวตแยกกัน)</h3>';
+  html += techVoteTable(r);
 
   html += '<h3>ข่าวจริงจากสำนักข่าว ('+((r.news_detail||{}).n||0)+' ข่าว)</h3>';
   html += '<div class="scroll" style="max-height:280px;padding:10px 12px">'+newsBlock(r)+'</div>';
@@ -540,6 +547,11 @@ function sideCard(s, side, reason){
       ' · กลาง '+money(s.hist_median_pnl)+'</div>'+
     '<div class="tiny dim">ครึ่งใหม่ '+pct(s.hist_recent_win)+' · ครึ่งเก่า '+pct(s.hist_older_win)+
       ' · ราคาที่ตลาดเรียกคิดเป็น '+pct(s.model_pop)+'</div>'+
+    '<div class="tiny" style="margin-top:4px">ย้อนหลัง: 6 เดือน <b class="mono">'+pct(s.hist_6m_win)+'</b>'+
+      (s.hist_6m_n?' <span class="dim">('+num(s.hist_6m_n,0)+' รอบ)</span>':'')+
+      ' · 12 เดือน <b class="mono">'+pct(s.hist_12m_win)+'</b>'+
+      (s.hist_12m_n?' <span class="dim">('+num(s.hist_12m_n,0)+' รอบ)</span>':'')+
+      (s.hist_12m_pf!=null?' · กำไร/ขาดทุน '+num(s.hist_12m_pf,2)+' เท่า':'')+'</div>'+
     (reason?'<div class="why tiny" style="margin-top:8px">'+esc(reason)+'</div>':'')+
   '</div>';
 }
@@ -563,10 +575,60 @@ function strikeRows(rows){
   }).join('');
 }
 
+function newsStateBanner(r){
+  const fresh=r.news_fresh||0, total=r.news_total||0;
+  const w=r.weights||{}, t=r.tech_tally||{};
+  const srcs=Object.keys(((r.news_detail||{}).sources)||{}).length;
+  const wf=Math.round((w.flow||0)*100), wt=Math.round((w.tech||0)*100), wn=Math.round((w.news||0)*100);
+  if(fresh>=1){
+    return '<div class="banner info tiny" style="margin-top:8px">'+
+      '<b>ข่าว:</b> '+esc(r.news_state||'')+' — ใหม่ '+fresh+' จาก '+total+' ข่าว'+
+      (srcs?' จาก '+srcs+' สำนัก':'')+' · น้ำหนักที่ใช้: กระแสเงิน '+wf+'% · เทคนิค '+wt+'% · ข่าว '+wn+'%'+
+      '</div>';
+  }
+  return '<div class="banner warn tiny" style="margin-top:8px">'+
+    '<b>⚠ ไม่มีข่าวใหม่ที่ใช้ได้</b> — '+esc(r.news_note||'')+'<br>'+
+    'รอบนี้จึงวิเคราะห์จาก <b>เทคนิค '+(t.call||0)+' ตัวชี้ CALL / '+(t.put||0)+' ตัวชี้ PUT</b> '+
+    'และ <b>ผลชนะจริงย้อนหลัง 6 และ 12 เดือน</b> · ยกน้ำหนักข่าว '+wn+
+    '% ไปให้กระแสเงิน ('+wf+'%) และเทคนิค ('+wt+'%) แทน<br>'+
+    'ไม่ได้แปลว่าตลาดเงียบ — แปลว่าเราไม่รู้ว่ามีอะไรเกิดขึ้น จึงไม่เดาจากข่าวที่ไม่มี'+
+    '</div>';
+}
+
+function techVoteTable(r){
+  const v=r.tech_votes||[];
+  if(!v.length) return '<div class="dim tiny">ไม่มีข้อมูลเทคนิคในรอบนี้</div>';
+  const t=r.tech_tally||{};
+  return '<div class="note" style="margin-bottom:6px">แต่ละเทคนิคโหวตแยกกัน ไม่ได้รวมเป็นคะแนนเดียว — '+
+    '<b class="call">'+(t.call||0)+'</b> CALL · <b class="put">'+(t.put||0)+'</b> PUT · '+(t.neutral||0)+' กลาง</div>'+
+    '<div class="scroll"><table><thead><tr><th>เทคนิค</th><th>โหวต</th><th>คะแนน</th><th>ค่าที่อ่านได้</th></tr></thead><tbody>'+
+    v.map(x=>'<tr><td>'+esc(x.name)+'</td>'+
+      '<td><span class="'+(x.dir==='CALL'?'call':x.dir==='PUT'?'put':'dim')+'">'+esc(x.dir)+'</span></td>'+
+      '<td class="mono '+(x.score>0?'up':x.score<0?'down':'')+'">'+(x.score>0?'+':'')+num(x.score,2)+'</td>'+
+      '<td class="tiny dim">'+esc(x.why)+'</td></tr>').join('')+
+    '</tbody></table></div>';
+}
+
 function newsBlock(r){
-  const items = ((r.news_detail||{}).items||[]);
-  if(!items.length) return '<div class="dim">รอบนี้ยังไม่มีข่าวที่ดึงได้</div>';
-  return items.map(n=>
+  const nd = r.news_detail||{};
+  const items = nd.items||[];
+  const srcs = nd.sources||{};
+  const names = Object.keys(srcs).sort((a,b)=>srcs[b]-srcs[a]);
+  let head = '<div class="tiny dim" style="margin-bottom:8px">'+
+    'พบ '+names.length+' สำนักข่าว: '+
+    names.slice(0,12).map(n=>esc(n)+' ('+srcs[n]+')').join(' · ')+(names.length>12?' …':'')+'</div>';
+  const checks = nd.checks||[];
+  if(checks.length){
+    head += '<table style="margin-bottom:10px"><thead><tr>'+
+      '<th>เหตุการณ์</th><th>สถานะ</th><th>จำนวน</th><th>สำนักที่รายงาน</th></tr></thead><tbody>'+
+      checks.map(c=>'<tr><td class="tiny">'+esc(c.event||'')+'</td>'+
+        '<td class="tiny">'+esc(c.verdict||'')+'</td>'+
+        '<td class="mono tiny">'+num(c.n,0)+'</td>'+
+        '<td class="tiny dim">'+esc((c.sources||[]).join(', '))+'</td></tr>').join('')+
+      '</tbody></table>';
+  }
+  if(!items.length) return head+'<div class="dim">รอบนี้ยังไม่มีข่าวที่ดึงได้</div>';
+  return head + items.map(n=>
     '<div style="padding:6px 0;border-bottom:1px solid var(--line)">'+
       '<span class="tag '+(n.c>0.1?'green':n.c<-0.1?'red':'grey')+'">'+num(n.c,2)+'</span> '+
       (n.url?'<a href="'+esc(n.url)+'" target="_blank" rel="noopener">'+esc(n.t)+'</a>':'<span>'+esc(n.t)+'</span>')+

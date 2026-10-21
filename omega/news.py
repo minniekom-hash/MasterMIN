@@ -142,6 +142,8 @@ PUBLISHERS = {
     "Stocktwits": ("stocktwits.com", 0.5, "social"),
     "Alpha Vantage": ("alphavantage.co", 0.8, "api"),
     "NewsAPI": ("newsapi.org", 0.9, "api"),
+    "Google News": ("news.google.com", 0.9, "aggregator"),
+    "Bing News": ("bing.com", 0.85, "aggregator"),
 }
 
 # (publisher, url) — market-wide headline feeds, fetched once and filtered per ticker.
@@ -175,8 +177,13 @@ GENERAL_FEEDS = [
     ("Seeking Alpha", "https://seekingalpha.com/market_currents.xml"),
 ]
 
-# per-ticker feeds — Yahoo's ticker RSS returned nothing and is dropped
+# per-ticker feeds.  The two aggregators are what actually make "several outlets
+# reported this" true: on its own the per-ticker list resolved to a single
+# publisher (Seeking Alpha produced 30 of 31 SOFI headlines), which cannot tell
+# you whether a story is confirmed or just syndicated.
 TICKER_FEEDS = [
+    ("Google News", "https://news.google.com/rss/search?q={sym}+stock+when:7d&hl=en-US&gl=US&ceid=US:en"),
+    ("Bing News", "https://www.bing.com/news/search?q={sym}+stock&format=RSS"),
     ("Nasdaq", "https://www.nasdaq.com/feed/rssoutbound?symbol={sym}"),
     ("Seeking Alpha", "https://seekingalpha.com/api/sa/combined/{sym}.xml"),
 ]
@@ -243,7 +250,7 @@ def parse_feed(text: str, limit: int = 60):
             return out
     nodes = [e for e in root.iter() if _local(e.tag) in ("item", "entry")]
     for e in nodes[:limit]:
-        title = link = desc = date = ""
+        title = link = desc = date = pub = ""
         for ch in e:
             t = _local(ch.tag)
             if t == "title":
@@ -256,9 +263,14 @@ def parse_feed(text: str, limit: int = 60):
             elif t in ("pubdate", "published", "updated", "date"):
                 if not date:
                     date = (ch.text or "").strip()
+            elif t == "source":
+                # Google News names the originating outlet here; without it every
+                # aggregated headline would be attributed to the aggregator and
+                # "how many outlets reported this" would be a lie.
+                pub = (ch.text or "").strip()
         if not title:
             continue
-        out.append(dict(t=title, url=link, ts=date, snip=desc[:400]))
+        out.append(dict(t=title, url=link, ts=date, snip=desc[:400], pub=pub))
     return out
 
 
@@ -381,9 +393,32 @@ def sec_filings(sym: str, days: int = 45, limit: int = 8):
 # --------------------------------------------------------------------------- #
 # per-ticker fetchers
 # --------------------------------------------------------------------------- #
+_AGGREGATORS = {"Google News", "Bing News"}
+
+
+def _attribute(it: dict, feed: str) -> str:
+    """The outlet that actually wrote this headline.
+
+    An aggregator feed only carries the story; the credibility of the item comes
+    from the outlet behind it.  Google News names that in <source>, and also in
+    the " - Publisher" suffix many of its titles carry.  When neither is present
+    (Bing wraps its links) the aggregator itself is the honest attribution.
+    """
+    pub = (it.get("pub") or "").strip()
+    if pub:
+        return pub
+    if feed in _AGGREGATORS:
+        title = it.get("t") or ""
+        if " - " in title:
+            tail = title.rsplit(" - ", 1)[-1].strip()
+            if 2 <= len(tail) <= 40:
+                return tail
+    return feed
+
+
 def ticker_feeds(sym: str):
     out = []
-    with ThreadPoolExecutor(max_workers=3) as ex:
+    with ThreadPoolExecutor(max_workers=4) as ex:
         futs = {ex.submit(fetch_feed, tpl.format(sym=sym)): name for name, tpl in TICKER_FEEDS}
         for f in futs:
             name = futs[f]
@@ -399,7 +434,14 @@ def ticker_feeds(sym: str):
                 continue
             _mark_src(name, True, len(items))
             for it in items:
-                it.update(s=name, k="ticker", age=age_hours(it.get("ts")))
+                outlet = _attribute(it, name)
+                title = it.get("t") or ""
+                # Drop the trailing " - Publisher" once the publisher is its own
+                # field, otherwise every aggregated headline reads doubled.
+                if name in _AGGREGATORS and outlet != name and title.endswith(" - " + outlet):
+                    title = title[: -len(" - " + outlet)].strip()
+                it["t"] = title
+                it.update(s=outlet, via=name, k="ticker", age=age_hours(it.get("ts")))
                 out.append(it)
     _mark_fetch("Per-ticker RSS", True, len(out))
     return out
@@ -644,6 +686,22 @@ def fact_check(items):
 ENRICH_N = 2
 
 
+def nz_age(v, default: float = 24.0) -> float:
+    """Hours since publication, never None and never negative.
+
+    An article with no usable date is treated as one day old rather than as
+    ancient: unknown must not read as stale, or every undated feed would be
+    reported as "no news".
+    """
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return default
+    if f != f or f < 0:          # NaN or a future timestamp from a bad clock
+        return default
+    return f
+
+
 def for_ticker(sym: str, name: str = "") -> dict:
     def load():
         sym_u = sym.upper()
@@ -752,12 +810,18 @@ def for_ticker(sym: str, name: str = "") -> dict:
             fscore = float(np.clip(0.55 * recency + 0.25 * min(w / 3, 1) + 0.2, 0, 1))
         social = float(st.get("score") or 0.0)
 
+        # Freshness is counted over every de-duplicated item, not just the ones
+        # sent to the UI: the UI shows the newest 14, but "is there news today"
+        # must be answered from the whole set.
+        fresh = sum(1 for i in dedup if nz_age(i.get("age")) <= 72)
+
         return dict(
             n=len(dedup), sources=sources, depth=depth, checks=checks, score=round(sig, 3),
             note=note, filings=filings, filing_score=round(fscore, 3), social=st,
-            engine=SENTIMENT_ENGINE,
+            engine=SENTIMENT_ENGINE, fresh=fresh,
             items=[dict(t=(i.get("t") or "")[:150], s=i.get("s"), c=i.get("c"), url=i.get("url"),
-                        h=round(i.get("age", 24)), depth=i.get("depth"), mismatch=i.get("mismatch"),
+                        age=round(nz_age(i.get("age")), 1), h=round(nz_age(i.get("age"))),
+                        ts=i.get("ts"), depth=i.get("depth"), mismatch=i.get("mismatch"),
                         why=i.get("why", ""), k=i.get("k", "publisher")) for i in
                    sorted(dedup, key=lambda i: i.get("age", 99))[:14]],
         )
