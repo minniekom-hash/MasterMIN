@@ -1089,6 +1089,7 @@ def analyze(sym: str) -> dict | None:
 
 def _analyze_inner(sym: str) -> dict | None:
     _T0 = time.time()
+    _T = {}
     _trace(sym, "fetch", _T)
     # The four slowest steps are independent network fetches, so run them
     # together instead of one after another.  On a free instance this is the
@@ -1119,7 +1120,6 @@ def _analyze_inner(sym: str) -> dict | None:
             return fallback
 
     pool = io_pool()
-    _T = {}
     try:
         _t0 = time.time()
         f_daily = pool.submit(data.daily, sym)
