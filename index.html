@@ -25,7 +25,8 @@
   .tiny{font-size:11.5px} .small{font-size:12.5px}
   .up{color:var(--green)} .down{color:var(--red)} .gold{color:var(--gold)}
   .call{color:var(--green)} .put{color:var(--red)}
-  h2{font-size:15px;margin:26px 0 10px;letter-spacing:.02em;font-weight:650}
+  h2{font-size:15px;margin:26px 0 10px;letter-spacing:.02em;font-weight:650;
+     border-left:3px solid var(--gold);padding-left:9px}
   h3{font-size:13px;margin:16px 0 8px;color:var(--gold);font-weight:650;letter-spacing:.03em}
 
   header{position:sticky;top:0;z-index:30;background:rgba(7,10,15,.94);
@@ -114,6 +115,23 @@
        font-size:12.5px;line-height:1.65}
   .sep{height:1px;background:var(--line);margin:10px 0}
   .note{color:var(--dim2);font-size:11px;line-height:1.6}
+
+  /* position checker */
+  .posform{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;align-items:end}
+  .posform label{display:block;font-size:10.5px;color:var(--dim2);margin-bottom:3px}
+  .posform input{width:100%;background:#0a0f14;border:1px solid var(--line);color:var(--text);
+                 border-radius:9px;padding:8px 10px;font-size:13px;font-family:var(--mono)}
+  .posform input:focus{outline:none;border-color:var(--gold)}
+  .posresult{margin-top:12px}
+  .leg{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--panel)}
+  .leg.c{border-left:3px solid var(--green)}
+  .leg.p{border-left:3px solid var(--red)}
+  .leg .vbig{font-size:20px;font-weight:700;line-height:1.2}
+  .whygrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-top:12px}
+  .whygrid .leg ul.clean li{margin:4px 0;line-height:1.55}
+  .pick,.leg{transition:transform .15s ease, box-shadow .15s ease}
+  .pick:hover,.leg:hover{transform:translateY(-1px);box-shadow:0 10px 26px rgba(0,0,0,.35)}
+  .mono,.kpi .v{font-variant-numeric:tabular-nums}
 </style>
 </head>
 <body>
@@ -152,6 +170,23 @@
 
   <div id="content" style="display:none">
     <div class="kpis" id="kpis"></div>
+
+    <h2>ตรวจที่ฉันถืออยู่ — วันนี้มีโอกาสชนะไหม</h2>
+    <div class="banner" style="margin-bottom:10px">
+      <div class="note" style="margin-bottom:6px">
+        กรอก strike ที่คุณถืออยู่ (อย่างน้อยหนึ่งขา) · ระบบจะดึงราคาหุ้นล่าสุดและราคาออปชันของวันหมดอายุที่ใกล้ที่สุด
+        แล้วบอกว่า “วันนี้” ต้องวิ่งอีกกี่เปอร์เซ็นต์ถึงจะชนะ และโอกาสเป็นเท่าไร
+      </div>
+      <div class="posform">
+        <div><label>หุ้น</label><input id="pTicker" placeholder="SOFI" maxlength="6" autocomplete="off" spellcheck="false"></div>
+        <div><label>CALL strike ที่ถือ</label><input id="pCall" inputmode="decimal" placeholder="เช่น 15" autocomplete="off"></div>
+        <div><label>PUT strike ที่ถือ</label><input id="pPut" inputmode="decimal" placeholder="เช่น 14" autocomplete="off"></div>
+        <div><label>พรีเมียม CALL ที่จ่าย ($)</label><input id="pCallPrem" inputmode="decimal" placeholder="ไม่กรอกก็ได้" autocomplete="off"></div>
+        <div><label>พรีเมียม PUT ที่จ่าย ($)</label><input id="pPutPrem" inputmode="decimal" placeholder="ไม่กรอกก็ได้" autocomplete="off"></div>
+        <div><button class="act" id="pGo" style="width:100%">ตรวจราคาล่าสุด</button></div>
+      </div>
+      <div id="pOut"></div>
+    </div>
 
     <h2>คำตอบสั้น ๆ: ตอนนี้สัญญาไหนน่าเข้าที่สุด</h2>
     <div class="note" style="margin-bottom:8px">
@@ -286,6 +321,7 @@ function render(){
   renderWatch(it);
   renderExpiryBoard(it);
   renderNews(it);
+  if(!POS_AUTO){ POS_AUTO = true; maybeAutoPos(); }
 }
 
 function renderKpis(it){
@@ -647,7 +683,167 @@ function moveTable(r){
     '</tbody></table></div>';
 }
 
+/* ---------------------------- position checker ---------------------------- */
+const PKEY = 'omega.pos.v1';
+let POS_AUTO = false;
+
+function loadPos(){
+  let s = {};
+  try{ s = JSON.parse(localStorage.getItem(PKEY)||'{}'); }catch(e){}
+  $('#pTicker').value = s.ticker || '';
+  $('#pCall').value   = s.call   || '';
+  $('#pPut').value    = s.put    || '';
+  $('#pCallPrem').value = s.callPrem || '';
+  $('#pPutPrem').value  = s.putPrem  || '';
+  return s;
+}
+
+function savePos(){
+  const s = {
+    ticker: ($('#pTicker').value||'').trim().toUpperCase(),
+    call: ($('#pCall').value||'').trim(),
+    put: ($('#pPut').value||'').trim(),
+    callPrem: ($('#pCallPrem').value||'').trim(),
+    putPrem: ($('#pPutPrem').value||'').trim()
+  };
+  try{ localStorage.setItem(PKEY, JSON.stringify(s)); }catch(e){}
+  return s;
+}
+
+async function runPos(){
+  const s = savePos();
+  if(!s.ticker){ $('#pOut').innerHTML = '<div class="risk" style="margin-top:10px">ใส่ ticker ก่อน</div>'; return; }
+  if(!s.call && !s.put){ $('#pOut').innerHTML = '<div class="risk" style="margin-top:10px">ใส่ strike อย่างน้อยหนึ่งขา</div>'; return; }
+  const q = new URLSearchParams({ticker:s.ticker});
+  if(s.call) q.set('call', s.call);
+  if(s.put) q.set('put', s.put);
+  if(s.callPrem) q.set('call_prem', s.callPrem);
+  if(s.putPrem) q.set('put_prem', s.putPrem);
+  $('#pOut').innerHTML = '<div class="dim" style="margin-top:10px"><span class="spin"></span> กำลังดึงราคาล่าสุดและราคาออปชัน…</div>';
+  try{
+    const r = await fetch('/api/position?'+q.toString(),{cache:'no-store'});
+    const j = await r.json();
+    if(j.error){ $('#pOut').innerHTML = '<div class="risk" style="margin-top:10px">'+esc(j.error)+'</div>'; return; }
+    renderPos(j);
+  }catch(err){
+    $('#pOut').innerHTML = '<div class="risk" style="margin-top:10px">ตรวจไม่สำเร็จ: '+esc(err.message)+'</div>';
+  }
+}
+
+function renderPos(j){
+  const t = j.tech_tally||{};
+  const chg = j.chg_pct;
+  let h = '';
+  if(j.summary){
+    h += '<div class="banner" style="margin-top:10px;border-color:#3a3320">'+
+      '<b style="color:var(--gold2)">สรุปวันนี้:</b> '+esc(j.summary)+'</div>';
+  }
+  h += '<div class="banner info tiny" style="margin-top:8px">'+
+    '<b>'+esc(j.ticker)+'</b> ราคาล่าสุด <b class="mono">'+money(j.spot)+'</b>'+
+    (chg!=null?' <span class="'+(chg>=0?'up':'down')+'">'+(chg>=0?'+':'')+num(chg,2)+'% วันนี้</span>':'')+
+    ' · แนวโน้ม <b>'+esc(j.trend)+'</b>'+
+    ' · เทคนิค '+(t.call||0)+' ชี้ CALL / '+(t.put||0)+' ชี้ PUT'+
+    ' · วันหมดอายุ '+esc(j.expiry)+' (อีก '+num(j.dte,0)+' วัน)'+
+    ' · ราคา ณ '+ago(j.asof)+'</div>';
+  (j.badges||[]).forEach(b=>{
+    h += '<div class="banner warn tiny" style="margin-top:6px">'+esc(b)+'</div>';
+  });
+  h += '<div class="cards posresult">'+j.legs.map(renderLeg).join('')+'</div>';
+  h += '<div class="whygrid">'+
+    whyCard('CALL', j.why_call||[], t) +
+    whyCard('PUT', j.why_put||[], t) +'</div>';
+  h += evidenceBlock(j);
+  h += '<div class="note" style="margin-top:8px">'+esc(j.note||'')+'</div>';
+  $('#pOut').innerHTML = h;
+}
+
+function whyCard(side, list, tally){
+  const c = side === 'CALL';
+  return '<div class="leg '+(c?'c':'p')+'">'+
+    '<div class="tiny dim">ทำไมต้อง '+side+'</div>'+
+    '<div style="font-size:15px;font-weight:700;margin:2px 0 8px" class="'+(c?'call':'put')+'">'+
+      side+' · '+(c?(tally.call||0):(tally.put||0))+' ตัวชี้หนุน</div>'+
+    '<ul class="clean tiny">'+list.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></div>';
+}
+
+function evidenceBlock(j){
+  const e = j.evidence||{};
+  let h = '<h3 style="margin-top:18px">หลักฐานที่ตรวจได้ (เอกสารสาธารณะ ไม่ใช่ข่าวลับ)</h3>';
+  h += '<div class="note" style="margin-bottom:8px">'+esc(j.insider_note||'')+'</div>';
+  const rows = [];
+  (e.insider||[]).forEach(f=>rows.push(['Form '+f.form, f.date, f.title, f.url]));
+  (e.material||[]).forEach(f=>rows.push(['Form '+f.form, f.date, f.title, f.url]));
+  if(rows.length){
+    h += '<div class="scroll"><table><thead><tr><th>ประเภท</th><th>วันที่</th>'+
+      '<th>รายละเอียด</th><th>ลิงก์</th></tr></thead><tbody>'+
+      rows.map(r=>'<tr><td class="mono tiny">'+esc(r[0])+'</td>'+
+        '<td class="mono tiny">'+esc(r[1]||'')+'</td>'+
+        '<td class="tiny">'+esc((r[2]||'').slice(0,120))+'</td>'+
+        '<td class="tiny">'+(r[3]?'<a href="'+esc(r[3])+'" target="_blank" rel="noopener">เปิด</a>':'—')+'</td></tr>').join('')+
+      '</tbody></table></div>';
+  }else{
+    h += '<div class="tiny dim">ไม่มีเอกสารใหม่จาก ก.ล.ต. สหรัฐใน 45 วันที่ผ่านมา</div>';
+  }
+  if((e.unusual||[]).length){
+    h += '<div class="tiny" style="margin-top:8px"><b>ออปชันที่ปริมาณผิดปกติ:</b> '+
+      e.unusual.map(u=>esc(u.kind)+' $'+u.strike+' (vol '+u.volume+' / OI '+u.oi+')').join(' · ')+'</div>';
+  }
+  const bits = [];
+  if(e.pc_vol!=null) bits.push('Put/Call '+num(e.pc_vol,2));
+  if(e.net_prem!=null) bits.push('net premium '+(e.net_prem>0?'+':'')+num(e.net_prem,2));
+  if(e.rvol!=null) bits.push('ปริมาณซื้อขาย '+num(e.rvol,2)+' เท่าของปกติ');
+  if(bits.length) h += '<div class="tiny dim" style="margin-top:6px">'+esc(bits.join(' · '))+'</div>';
+  if((e.headlines||[]).length){
+    h += '<div style="margin-top:10px">'+(e.headlines||[]).map(n=>
+      '<div class="tiny" style="padding:4px 0;border-bottom:1px solid var(--line)">'+
+      '<span class="tag '+(n.c>0.1?'green':n.c<-0.1?'red':'grey')+'">'+num(n.c,2)+'</span> '+
+      (n.url?'<a href="'+esc(n.url)+'" target="_blank" rel="noopener">'+esc(n.t)+'</a>':esc(n.t))+
+      ' <span class="dim">· '+esc(n.s||'')+'</span></div>').join('')+'</div>';
+  }
+  return h;
+}
+
+function renderLeg(l){
+  if(l.error) return '<div class="leg"><b>'+esc(l.side||'')+'</b> '+esc(l.error)+'</div>';
+  const cls = l.side==='CALL' ? 'c' : 'p';
+  const good = (l.pnl_pct||0) >= 0;
+  const vcolor = (l.verdict==='ได้เปรียบ'||l.verdict==='มีโอกาส') ? 'var(--green)'
+               : (l.verdict==='พอมีโอกาส' ? 'var(--amber)'
+               : (l.verdict==='ไม่น่า' ? 'var(--red)' : 'var(--gold)'));
+  return '<div class="leg '+cls+'">'+
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">'+
+      '<div><span class="'+(cls==='c'?'call':'put')+'" style="font-weight:700">'+l.side+'</span> '+
+        '<b class="mono" style="font-size:18px">$'+l.strike+'</b> '+
+        '<span class="tiny dim">'+esc(l.status)+' · หมดอายุ '+esc(l.expiry)+'</span></div>'+
+      '<div class="tiny dim mono">mid '+money(l.mid)+'</div>'+
+    '</div>'+
+    '<div class="vbig" style="color:'+vcolor+';margin:8px 0 3px">'+esc(l.verdict)+'</div>'+
+    '<div class="tiny dim">โอกาสปิดวันนี้ฝั่งที่ชนะ <b class="mono">'+pct(l.p_side_today)+'</b>'+
+      ' · แตะ strike วันนี้ ~<b class="mono">'+pct(l.p_touch_today)+'</b>'+
+      ' · กำไรตอนหมดอายุ <b class="mono">'+pct(l.p_win_expiry)+'</b></div>'+
+    '<div class="sep"></div>'+
+    '<div class="tiny">ต้องขยับอีก <b class="mono">'+num(l.need_strike_pct,2)+'%</b> ถึง strike'+
+      ' · จุดคุ้มทุน <b class="mono">'+money(l.breakeven)+'</b> (อีก '+num(l.need_be_pct,2)+'%)</div>'+
+    (l.premium ? '<div class="tiny">จ่าย '+money(l.premium)+' → ตอนนี้ '+money(l.mid)+
+      ' = <b class="'+(good?'up':'down')+'">'+(good?'+':'')+num(l.pnl_pct,1)+'%</b>'+
+      ' <span class="dim">(ประมาณ '+(good?'+':'-')+'$'+num(Math.abs(l.pnl_usd)*100,0)+' ต่อ 1 สัญญา)</span></div>' : '')+
+    (l.hist ? '<div class="tiny dim">สถิติจริงของ strike นี้: ชนะ '+pct(l.hist.win)+
+      ' ('+l.hist.count+'/'+l.hist.n+' รอบ) · แตะ strike '+pct(l.hist.touch)+'</div>' : '')+
+    '<ul class="clean tiny dim">'+l.reasons.map(r=>'<li>'+esc(r)+'</li>').join('')+'</ul>'+
+  '</div>';
+}
+
+function maybeAutoPos(){
+  const s = loadPos();
+  if(s.ticker && (s.call || s.put)) runPos();
+}
+
 /* ---------------------------------- start --------------------------------- */
+$('#pGo').addEventListener('click', runPos);
+['pTicker','pCall','pPut','pCallPrem','pPutPrem'].forEach(id=>{
+  const el = $('#'+id);
+  if(el) el.addEventListener('keydown', ev=>{ if(ev.key === 'Enter'){ ev.preventDefault(); runPos(); } });
+});
 boot();
 </script>
 </body>

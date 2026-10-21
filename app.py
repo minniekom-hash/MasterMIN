@@ -413,6 +413,36 @@ def api_track():
     return jsonify(clean(track.scoreboard()))
 
 
+@app.route("/api/position")
+def api_position():
+    """Check the strikes the user tells us they hold, against the live tape."""
+    sym = re.sub(r"[^A-Za-z]", "", request.args.get("ticker", ""))[:6].upper()
+    if not sym:
+        return jsonify(error="ใส่ ticker หุ้นสหรัฐ เช่น SOFI"), 400
+
+    def _f(name):
+        v = (request.args.get(name) or "").strip()
+        if not v:
+            return None
+        try:
+            x = float(v)
+        except ValueError:
+            return None
+        return x if x > 0 else None
+
+    call_k = _f("call")
+    put_k = _f("put")
+    if call_k is None and put_k is None:
+        return jsonify(error="กรอก strike อย่างน้อยหนึ่งขา (CALL หรือ PUT)"), 400
+    try:
+        res = engine.position_check(sym, call_k, put_k,
+                                    _f("call_prem"), _f("put_prem"))
+    except Exception as ex:
+        log.warning("position %s: %s", sym, ex)
+        return jsonify(error=f"{type(ex).__name__}: {str(ex)[:160]}"), 502
+    return jsonify(clean(res))
+
+
 @app.route("/api/analyze/<t>")
 def api_analyze(t: str):
     sym = re.sub(r"[^A-Za-z]", "", t).upper()[:6]

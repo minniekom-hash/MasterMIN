@@ -1398,6 +1398,377 @@ def _analyze_inner(sym: str) -> dict | None:
     return base
 
 
+# --------------------------------------------------------------------------- #
+# the position the user already holds
+# --------------------------------------------------------------------------- #
+def _ncdf(x: float) -> float:
+    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+
+# What each SEC form actually means, so the evidence table is readable instead
+# of repeating "4 — FORM 4".
+FORM_TH = {
+    "3": "แจ้งการถือหุ้นครั้งแรกของผู้บริหาร",
+    "4": "แจ้งการซื้อ/ขายหุ้นของผู้บริหาร (คนวงใน)",
+    "5": "รายงานการถือหุ้นประจำปีของผู้บริหาร",
+    "8-K": "เหตุการณ์สำคัญที่ต้องแจ้งทันที",
+    "10-Q": "งบการเงินรายไตรมาส",
+    "10-K": "งบการเงินรายปี",
+    "SC 13D": "มีผู้ถือหุ้นรายใหญ่เกิน 5% (เชิงรุก)",
+    "SC 13G": "มีผู้ถือหุ้นรายใหญ่เกิน 5% (เชิงรับ)",
+    "S-1": "ยื่นจดทะเบียนหุ้นใหม่",
+    "424B": "ขายหุ้นเพิ่มทุน",
+    "DEF 14A": "หนังสือเชิญประชุมผู้ถือหุ้น",
+}
+
+
+def position_check(sym: str, call_strike=None, put_strike=None,
+                   call_prem=None, put_prem=None) -> dict:
+    """Score the strikes the user already holds against the live tape.
+
+    The user trades daily and knows exactly which strikes are on: what is
+    missing is whether those strikes still have a path today.  Every leg
+    reports where the stock sits relative to the strike, how far it still has
+    to travel, the chance it closes on the winning side today, and the trend
+    evidence behind that number -- plus, separately, the counted history of
+    that exact contract, which is the part no model can talk its way around.
+
+    Times are treated honestly: an expiry that is *today* is scored on today's
+    close, not on some comfortable multi-day horizon.
+    """
+    sym = re.sub(r"[^A-Z.]", "", (sym or "").upper())[:6]
+    if not sym:
+        return dict(error="ใส่ ticker หุ้นสหรัฐก่อน เช่น SOFI")
+
+    ch = data.chain(sym)
+    if not ch or not ch.get("rows"):
+        return dict(ticker=sym, error="ดึง chain ออปชันไม่ได้ในขณะนี้ ลองอีกครั้ง")
+
+    d = data.daily(sym)
+    intra = data.intraday(sym)
+    spot = float(ch.get("spot") or 0.0)
+    if spot <= 0 and len(d):
+        spot = float(d["Close"].iloc[-1])
+    if spot <= 0:
+        return dict(ticker=sym, error="ไม่พบราคาล่าสุดของหุ้นนี้")
+
+    spy = cache.wrap("d:SPY", 900, lambda: data.daily("SPY"))
+    d_sig, d_info = tech_signal(d, spy)
+    c_sig, c_info = flow_signal(d, intra, ch)
+    votes = tech_votes(d_info)
+    tally = dict(call=sum(1 for v in votes if v["dir"] == "CALL"),
+                 put=sum(1 for v in votes if v["dir"] == "PUT"))
+    tally["neutral"] = len(votes) - tally["call"] - tally["put"]
+    # Same flow/tech split the full analysis uses when there is no news weight
+    # to spend; a position check must not quietly use a different opinion.
+    net = float(np.clip(0.425 * nz(c_sig) + 0.575 * nz(d_sig), -1, 1))
+
+    sigma_hist = 0.40
+    if len(d) > 35:
+        try:
+            sigma_hist = float(np.clip(quant.vol_close(d["Close"], 30), 0.03, 3.0))
+        except Exception:
+            pass
+
+    today = datetime.now(timezone.utc).date()
+    exps = set()
+    for r in ch["rows"]:
+        try:
+            dte = (datetime.strptime(r["expiry"], "%Y-%m-%d").date() - today).days
+        except Exception:
+            continue
+        if dte >= 0:
+            exps.add((dte, r["expiry"]))
+    if not exps:
+        return dict(ticker=sym, error="ไม่มีวันหมดอายุที่ยังไม่ผ่านใน chain นี้")
+    exps = sorted(exps)
+    dte, exp = exps[0]
+
+    def sigma_for(e: str) -> float:
+        pool = [r["iv"] / 100.0 for r in ch["rows"]
+                if r["expiry"] == e and abs(r["strike"] - spot) <= spot * 0.02
+                and r.get("iv") and r["iv"] > 1]
+        iv = float(np.mean(pool)) if pool else (ch.get("iv30") or 0) / 100.0
+        if not iv or iv <= 0:
+            iv = sigma_hist
+        return float(np.clip(0.65 * iv + 0.35 * sigma_hist, 0.03, 4.0))
+
+    sig = sigma_for(exp)
+    mu = RF + 0.10 * net
+
+    def p_beyond(level: float, T: float, kind: str):
+        """Model chance the stock finishes beyond a price, on this expiry's vol."""
+        if level <= 0 or T <= 0 or sig <= 0:
+            return None
+        try:
+            z = (math.log(spot / level) + (mu - 0.5 * sig * sig) * T) / (sig * math.sqrt(T))
+        except (ValueError, ZeroDivisionError):
+            return None
+        return _ncdf(z) if kind == "CALL" else _ncdf(-z)
+
+    def build(kind: str, strike_in, prem_in):
+        if strike_in in (None, "", 0, "0"):
+            return None
+        try:
+            want = float(strike_in)
+        except (TypeError, ValueError):
+            return dict(side=kind, error="strike ที่กรอกไม่ใช่ตัวเลข")
+
+        rows = [r for r in ch["rows"] if r["expiry"] == exp and r["kind"] == kind]
+        if not rows:
+            return dict(side=kind, strike=want,
+                        error="ไม่พบสัญญา %s ในวันหมดอายุนี้" % kind)
+        exact = [r for r in rows if abs(r["strike"] - want) < 1e-9]
+        r = exact[0] if exact else min(rows, key=lambda x: abs(x["strike"] - want))
+        strike = float(r["strike"])
+        mid = ((r["bid"] + r["ask"]) / 2.0) if (r["bid"] and r["ask"]) else \
+            float(r.get("last") or r.get("theo") or 0.0)
+        try:
+            prem = float(prem_in) if prem_in not in (None, "", 0, "0") else mid
+        except (TypeError, ValueError):
+            prem = mid
+        be = strike + prem if kind == "CALL" else strike - prem
+
+        T_exp = max(dte, 1) / 365.0
+        T_day = 1.0 / 252.0
+        p_itm = p_beyond(strike, T_exp, kind)
+        p_win_expiry = p_beyond(be, T_exp, kind)
+        p_side_today = p_beyond(strike, T_day, kind)
+        p_win_today = p_beyond(be, T_day, kind)
+
+        itm = spot > strike if kind == "CALL" else spot < strike
+        dist_strike = (strike / spot - 1.0) * 100.0      # + means strike is above spot
+        need_strike = abs(dist_strike)
+        need_be = abs((be / spot - 1.0) * 100.0)
+        pnl = mid - prem
+        pnl_pct = (pnl / prem * 100.0) if prem > 0 else None
+        # Chance of *touching* the strike at some point today, which is what a
+        # day trader actually sells into.  Already beyond it means already met.
+        p_touch_today = 1.0 if itm else min(1.0, 2.0 * (p_side_today or 0.0))
+
+        p = p_side_today or 0.0
+        same = tally["call"] if kind == "CALL" else tally["put"]
+        against = tally["put"] if kind == "CALL" else tally["call"]
+        aligned = same >= 5 and same > against
+
+        if itm and p >= 0.5:
+            verdict = "ได้เปรียบ"
+        elif p >= 0.62:
+            verdict = "มีโอกาส"
+        elif p >= 0.45:
+            verdict = "พอมีโอกาส"
+        elif p >= 0.32:
+            verdict = "เสี้ยวเดียว"
+        elif aligned:
+            # The direction is right, the distance is the problem.  Saying
+            # "ไม่น่า" here would contradict the trend table right above it.
+            verdict = "ทิศถูก แต่ไกลเกินวันนี้"
+        else:
+            verdict = "ไม่น่า"
+
+        reasons = ["เทคนิค %d จาก %d ตัวชี้ทาง %s · %d ตัวชี้สวนทาง"
+                   % (same, len(votes), kind, against)]
+        if itm:
+            reasons.append("ราคาอยู่ฝั่งที่ได้เปรียบ (ITM) แล้ว — เหนือ strike %.1f%%"
+                           % need_strike if kind == "CALL" else
+                           "ราคาอยู่ฝั่งที่ได้เปรียบ (ITM) แล้ว — ใต้ strike %.1f%%" % need_strike)
+        else:
+            reasons.append("ต้องขยับอีก %.1f%% ถึง strike $%g" % (need_strike, strike))
+        reasons.append("จุดคุ้มทุน $%.2f (ต้องขยับอีก %.1f%%)" % (be, need_be))
+        if prem > 0 and mid > 0:
+            reasons.append("ราคาสัญญาตอนนี้ $%.2f เทียบที่จ่าย $%.2f = %s%.0f%%"
+                           % (mid, prem, "+" if pnl >= 0 else "", pnl_pct or 0.0))
+        if dte <= 1:
+            reasons.append("หมดอายุวันนี้/พรุ่งนี้ — ต้องปิดฝั่งที่ถูกก่อนตลาดปิด ไม่งั้นหมดค่า")
+        if aligned and p < 0.45:
+            reasons.append("ทิศทางเข้าข้างขานี้ แต่ต้องวิ่ง %.1f%% ภายในวันเดียว — "
+                           "ทิศถูกอย่างเดียวยังไม่พอ" % need_strike)
+
+        hist = None
+        try:
+            n_days = max(int(round(dte * 5 / 7)), 1)
+            dist = sim.hist_distributions_full(d["Close"], d["High"], d["Low"], n_days, 504)
+            h = sim.hist_outcome(dist, kind, strike, spot, prem)
+            if h and h.get("hist_win") is not None:
+                hist = dict(win=h.get("hist_win"), n=h.get("hist_n"),
+                            count=h.get("hist_win_count"), touch=h.get("hist_touch"),
+                            pnl=h.get("hist_avg_pnl"))
+        except Exception:
+            hist = None
+
+        return dict(side=kind, strike=strike, requested=round(want, 2),
+                    strike_moved=not exact,
+                    expiry=exp, dte=dte, status="ITM" if itm else "OTM",
+                    dist_strike_pct=round(dist_strike, 2),
+                    need_strike_pct=round(need_strike, 2),
+                    breakeven=round(be, 2), need_be_pct=round(need_be, 2),
+                    mid=round(mid, 2), premium=round(prem, 2),
+                    pnl_usd=round(pnl, 2),
+                    pnl_pct=round(pnl_pct, 1) if pnl_pct is not None else None,
+                    p_itm=round(p_itm * 100, 1) if p_itm is not None else None,
+                    p_win_expiry=round(p_win_expiry * 100, 1) if p_win_expiry is not None else None,
+                    p_side_today=round(p_side_today * 100, 1) if p_side_today is not None else None,
+                    p_win_today=round(p_win_today * 100, 1) if p_win_today is not None else None,
+                    p_touch_today=round(p_touch_today * 100, 1),
+                    delta=r.get("delta"), iv=round(float(r.get("iv") or 0.0), 1),
+                    volume=r.get("volume"), oi=r.get("oi"),
+                    hist=hist, verdict=verdict, reasons=reasons)
+
+    legs = [x for x in (build("CALL", call_strike, call_prem),
+                        build("PUT", put_strike, put_prem)) if x]
+    if not legs:
+        return dict(ticker=sym, error="กรอก strike อย่างน้อยหนึ่งขา (CALL หรือ PUT)")
+
+    # ---- the evidence behind the direction ---------------------------------
+    # "ข่าวลับ" does not exist for us and would be illegal to trade on.  What
+    # does exist is the paper trail insiders and large holders are *required*
+    # to file: Form 4 (officer/director trades), 8-K (material events),
+    # 13D/G (5%+ stakes), plus unusual option prints.  That is the closest
+    # legal thing to inside information, and it is checkable.
+    ns = {}
+    try:
+        from concurrent.futures import ThreadPoolExecutor as _TPE
+        _pool = _TPE(max_workers=1)
+        try:
+            ns = _pool.submit(news.for_ticker, sym, "").result(timeout=20.0) or {}
+        finally:
+            _pool.shutdown(wait=False)
+    except Exception:
+        ns = {}
+
+    ns_items = ns.get("items") or []
+    fresh = int(ns.get("fresh") or 0)
+    filings = ns.get("filings") or []
+    insider = [f for f in filings if str(f.get("form")) in ("4", "3", "5")]
+    material = [f for f in filings
+                if str(f.get("form")) in ("8-K", "10-Q", "10-K", "SC 13D", "SC 13G",
+                                          "S-1", "424B", "DEF 14A")]
+    unusual = c_info.get("hot") or []
+    npv = c_info.get("net_prem")
+    pcv = c_info.get("pc_vol")
+
+    def _form_rows(rows, limit=3):
+        """Unique (form, date) rows with a readable meaning, newest first."""
+        seen, out = set(), []
+        for f in rows:
+            key = (str(f.get("form")), f.get("date"))
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(dict(form=f.get("form"), date=f.get("date"),
+                            title=FORM_TH.get(str(f.get("form")), f.get("title") or ""),
+                            url=f.get("url")))
+            if len(out) >= limit:
+                break
+        return out
+
+    insider_rows = _form_rows(insider)
+    material_rows = _form_rows(material)
+
+    def why(side: str) -> list:
+        out = []
+        agree = [v["name"] for v in votes if v["dir"] == side]
+        against = [v["name"] for v in votes if v["dir"] in ("CALL", "PUT") and v["dir"] != side]
+        if agree:
+            out.append("เทคนิคหนุน %d ตัว: %s" % (len(agree), ", ".join(agree)))
+        if against:
+            out.append("เทคนิคค้าน %d ตัว: %s" % (len(against), ", ".join(against)))
+
+        if side == "CALL":
+            if npv is not None and npv > 0.03:
+                out.append("เงินพรีเมียมออปชันไหลฝั่ง CALL (net %+.2f)" % npv)
+            elif npv is not None and npv < -0.03:
+                out.append("เงินพรีเมียมไหลฝั่ง PUT (net %+.2f) — สวนทางกับ CALL" % npv)
+            if pcv is not None and pcv < 0.85:
+                out.append("Put/Call %.2f — มีคนซื้อ CALL มากกว่าปกติ" % pcv)
+            elif pcv is not None and pcv > 1.2:
+                out.append("Put/Call %.2f — ตลาดเอนไป PUT" % pcv)
+        else:
+            if npv is not None and npv < -0.03:
+                out.append("เงินพรีเมียมออปชันไหลฝั่ง PUT (net %+.2f)" % npv)
+            elif npv is not None and npv > 0.03:
+                out.append("เงินพรีเมียมไหลฝั่ง CALL (net %+.2f) — สวนทางกับ PUT" % npv)
+            if pcv is not None and pcv > 1.2:
+                out.append("Put/Call %.2f — มีคนซื้อ PUT มากกว่าปกติ" % pcv)
+            elif pcv is not None and pcv < 0.85:
+                out.append("Put/Call %.2f — ตลาดเอนไป CALL" % pcv)
+
+        if unusual:
+            hot = ", ".join("%s $%g (vol %s / OI %s)"
+                            % (h["kind"], h["strike"], int(h["volume"]), int(h["oi"]))
+                            for h in unusual[:2])
+            out.append("ปริมาณออปชันผิดปกติที่เห็น: " + hot)
+        if insider:
+            f = insider[0]
+            out.append("ผู้บริหาร/คนวงในยื่น Form %s วันที่ %s — %s"
+                       % (f["form"], f["date"],
+                          FORM_TH.get(str(f.get("form")), "เอกสารสาธารณะ")))
+        if material:
+            forms = ", ".join(sorted({str(f["form"]) for f in material[:3]}))
+            out.append("เอกสารสำคัญต่อ ก.ล.ต. สหรัฐ: %s (ล่าสุด %s)" % (forms, material[0]["date"]))
+        if fresh and ns_items:
+            top = ns_items[0]
+            out.append("ข่าวใหม่ %d ชิ้น · ล่าสุด “%s” (%s, น้ำเสียง %+.2f)"
+                       % (fresh, (top.get("t") or "")[:90], top.get("s") or "—",
+                          float(top.get("c") or 0.0)))
+        else:
+            out.append("ไม่มีข่าวใหม่ที่ใช้ได้ — เหตุผลนี้มาจากเทคนิค กระแสเงิน "
+                       "และสถิติจริงย้อนหลัง ไม่ได้มาจากข่าว")
+        return out
+
+    why_call = why("CALL")
+    why_put = why("PUT")
+
+    badges = []
+    if dte == 0:
+        badges.append("วันนี้เป็นวันหมดอายุ — ตัวเลขคือโอกาสปิดท้ายวันที่ฝั่งนั้นชนะ")
+    elif dte <= 2:
+        badges.append("เหลืออีก %d วัน — ค่าเวลาจะหมดเร็ว อย่าถือข้ามวันโดยไม่มีแผน" % dte)
+    for lg in legs:
+        if lg.get("strike_moved"):
+            badges.append("%s $%g ไม่มีในตลาด ใช้ strike ใกล้สุด $%g แทน"
+                          % (lg["side"], lg.get("requested", 0), lg.get("strike", 0)))
+
+    trend = "ขาขึ้น" if nz(d_info.get("stack"), 0) > 0 else \
+        ("ขาลง" if nz(d_info.get("stack"), 0) < 0 else "แกว่งออกข้าง")
+
+    return dict(
+        ticker=sym, spot=round(spot, 2),
+        spot_source="CBOE (delayed)" if ch.get("spot") else "Yahoo",
+        chg_pct=ch.get("chg_pct"), asof=ch.get("ts"), fetched=ch.get("fetched"),
+        expiry=exp, dte=dte,
+        expiries=[dict(expiry=e, dte=t) for t, e in exps[:4]],
+        trend=trend, signal=round(net, 3),
+        tech_tally=tally, tech_votes=votes,
+        intraday=dict(vwap=c_info.get("vwap"), rvol=c_info.get("rvol"),
+                      pc_vol=c_info.get("pc_vol"), net_prem=c_info.get("net_prem")),
+        atm_iv=round(sig * 100, 1), sigma_hist=round(sigma_hist * 100, 1),
+        legs=legs, badges=badges,
+        why_call=why_call, why_put=why_put,
+        evidence=dict(
+            news_state=ns.get("news_state") or ("มีข่าวใหม่" if fresh else "ไม่มีข่าว"),
+            fresh=fresh, news_total=int(ns.get("n") or 0),
+            headlines=[dict(t=(i.get("t") or "")[:110], s=i.get("s"), c=i.get("c"),
+                            h=i.get("h"), url=i.get("url")) for i in ns_items[:3]],
+            insider=insider_rows,
+            material=material_rows,
+            unusual=unusual, pc_vol=pcv, net_prem=npv, rvol=c_info.get("rvol")),
+        insider_note=("ข่าวลับ/ข้อมูลวงใน: เราไม่มีและเข้าถึงไม่ได้ (ผิดกฎหมาย) — "
+                      "สิ่งที่ตรวจได้คือร่องรอยสาธารณะที่คนวงในต้องยื่นต่อ ก.ล.ต. สหรัฐ "
+                      "เช่น Form 4 (การซื้อขายของผู้บริหาร), 8-K (เหตุการณ์สำคัญ), "
+                      "13D/G (การถือหุ้นตั้งแต่ 5%) และปริมาณออปชันที่ผิดปกติ"),
+        answer=("ตรวจที่ราคา $%.2f · %s · วันหมดอายุที่ใช้ %s (อีก %d วัน)"
+                % (spot, trend, exp, dte)),
+        summary=" · ".join(
+            "%s $%g: %s (โอกาสปิดฝั่งชนะ %.0f%%, ต้องวิ่งอีก %.1f%%)"
+            % (lg["side"], lg["strike"], lg["verdict"],
+               lg.get("p_side_today") or 0, lg.get("need_strike_pct") or 0)
+            for lg in legs if not lg.get("error")),
+        note="โอกาสชนะเป็นแบบจำลองจากความผันผวนของวันหมดอายุนี้ + แนวโน้ม · "
+             "สถิติจริงของ strike เดียวกันแสดงแยกไว้ · ราคาออปชันล่าช้าจาก CBOE",
+    )
+
+
 # Fields the dashboard's list view actually renders (see index.html).  Anything
 # not here is only needed by the detail panel, which fetches /api/analyze/<sym>
 # fresh and therefore gets the full, uncompacted result.
