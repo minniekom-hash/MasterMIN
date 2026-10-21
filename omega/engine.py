@@ -1,4 +1,4 @@
-﻿"""Omega v2 โ€” the analysis engine.
+﻿"""Omega v2 — the analysis engine.
 
 Original six-model ensemble, each leg wired to a real data source:
 
@@ -53,7 +53,7 @@ TARGET_DTE = env_int("TARGET_DTE", 7)
 # contract already states the date it must obey.  A chain can list a dozen
 # expiries; these are how many of the nearest ones get their own answer.
 MAX_EXPIRY_VIEWS = env_int("MAX_EXPIRY_VIEWS", 4)
-_WEEKDAY_TH = ("เธเธฑเธเธ—เธฃเน", "เธญเธฑเธเธเธฒเธฃ", "เธเธธเธ", "เธเธคเธซเธฑเธชเธเธ”เธต", "เธจเธธเธเธฃเน", "เน€เธชเธฒเธฃเน", "เธญเธฒเธ—เธดเธ•เธขเน")
+_WEEKDAY_TH = ("จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์", "อาทิตย์")
 SIMS = env_int("SIMS", 4000)
 HIST_WINDOW = env_int("HIST_WINDOW", 126)      # ~6 months of trading days
 STRIKE_BAND = env_float("STRIKE_BAND", 0.15)   # +/- 15% of spot
@@ -225,46 +225,46 @@ def tech_votes(info: dict) -> list:
     def add(name: str, score: float, why: str):
         score = float(np.clip(nz(score, 0.0), -1, 1))
         rows.append(dict(name=name,
-                         dir="CALL" if score > 0.12 else ("PUT" if score < -0.12 else "เธเธฅเธฒเธ"),
+                         dir="CALL" if score > 0.12 else ("PUT" if score < -0.12 else "กลาง"),
                          score=round(score, 2), why=why))
 
     st = nz(info.get("stack"), 0)
-    add("EMA 9/21/50 เน€เธฃเธตเธขเธเธ•เธฑเธง", st,
-        "เน€เธฃเธตเธขเธเธเธถเนเธเธเธฃเธ 9>21>50" if st > 0 else
-        ("เน€เธฃเธตเธขเธเธฅเธเธเธฃเธ 9<21<50" if st < 0 else "เธขเธฑเธเธชเธฅเธฑเธเธเธฑเธ เนเธกเนเธกเธตเนเธเธงเนเธเนเธกเธเธฑเธ”"))
+    add("EMA 9/21/50 เรียงตัว", st,
+        "เรียงขึ้นครบ 9>21>50" if st > 0 else
+        ("เรียงลงครบ 9<21<50" if st < 0 else "ยังสลับกัน ไม่มีแนวโน้มชัด"))
 
     r = nz(info.get("rsi"), 50.0)
     div = nz(info.get("rsi_div"), 0)
     add("RSI(14)", (r - 50) / 25 * 0.7 + 0.3 * div,
         f"RSI {r:.0f}"
-        + (" + เนเธ”เน€เธงเธญเธฃเนเน€เธเธเธเนเธเธฅเธฑเธเธ•เธฑเธงเธเธถเนเธ" if div > 0 else
-           (" + เนเธ”เน€เธงเธญเธฃเนเน€เธเธเธเนเธเธฅเธฑเธเธ•เธฑเธงเธฅเธ" if div < 0 else "")))
+        + (" + ไดเวอร์เจนซ์กลับตัวขึ้น" if div > 0 else
+           (" + ไดเวอร์เจนซ์กลับตัวลง" if div < 0 else "")))
 
     mh = nz(info.get("macd_hist"), 0.0)
-    add("MACD histogram", np.clip(mh * 4, -1, 1), f"เนเธ—เนเธ histogram {mh:+.3f}")
+    add("MACD histogram", np.clip(mh * 4, -1, 1), f"แท่ง histogram {mh:+.3f}")
 
     adx, pdi, mdi = nz(info.get("adx"), 0.0), nz(info.get("pdi"), 0.0), nz(info.get("mdi"), 0.0)
-    add("ADX / DI เธ—เธดเธจเธ—เธฒเธ", (1.0 if pdi > mdi else -1.0) * min(adx / 25.0, 1.0),
+    add("ADX / DI ทิศทาง", (1.0 if pdi > mdi else -1.0) * min(adx / 25.0, 1.0),
         f"ADX {adx:.0f} ยท DI+ {pdi:.0f} / DI- {mdi:.0f}")
 
     stoch = nz(info.get("stoch"), 50.0)
     add("Stochastic", np.clip((stoch - 50) / 40, -1, 1), f"Stoch {stoch:.0f}")
 
     m21, m63 = nz(info.get("mom21"), 0.0), nz(info.get("mom63"), 0.0)
-    add("เนเธกเน€เธกเธเธ•เธฑเธก 1โ€“3 เน€เธ”เธทเธญเธ",
+    add("โมเมนตัม 1–3 เดือน",
         np.clip(m21 * 8, -1, 1) * 0.6 + np.clip(m63 * 4, -1, 1) * 0.4,
-        f"1 เน€เธ”เธทเธญเธ {m21:+.1f}% ยท 3 เน€เธ”เธทเธญเธ {m63:+.1f}%")
+        f"1 เดือน {m21:+.1f}% · 3 เดือน {m63:+.1f}%")
 
     rs = nz(info.get("rs_spy"), 0.0)
-    add("เนเธเนเธเนเธฃเธเธเธงเนเธฒ SPY", np.clip(rs * 6, -1, 1), f"{rs:+.1f}% เน€เธ—เธตเธขเธ SPY")
+    add("แข็งแรงกว่า SPY", np.clip(rs * 6, -1, 1), f"{rs:+.1f}% เทียบ SPY")
 
     pb = nz(info.get("pb"), 0.5)
     # Bollinger position is mean-reverting: hugging the top band is stretched,
     # not bullish, so the vote points the other way.
-    add("เธ•เธณเนเธซเธเนเธ Bollinger", np.clip((0.5 - pb) * 1.6, -1, 1),
-        f"เธญเธขเธนเนเธ—เธตเน {pb * 100:.0f}% เธเธญเธเธเธฃเธญเธ"
-        + (" (เธเธดเธ”เธเธฃเธญเธเธเธ = เธ•เธถเธเธ•เธฑเธง)" if pb > 0.9 else
-           (" (เธเธดเธ”เธเธฃเธญเธเธฅเนเธฒเธ = เธ•เธถเธเธ•เธฑเธง)" if pb < 0.1 else "")))
+    add("ตำแหน่ง Bollinger", np.clip((0.5 - pb) * 1.6, -1, 1),
+        f"อยู่ที่ {pb * 100:.0f}% ของกรอบ"
+        + (" (ชิดกรอบบน = ตึงตัว)" if pb > 0.9 else
+           (" (ชิดกรอบล่าง = ตึงตัว)" if pb < 0.1 else "")))
     return rows
 
 
@@ -371,7 +371,7 @@ def news_signal(ns: dict):
     f = nz(ns.get("filing_score"), 0.0)
     soc = nz((ns.get("social") or {}).get("score"), 0.0)
     checks = ns.get("checks") or []
-    verified = sum(1 for c in checks if c["verdict"] in ("เธขเธทเธเธขเธฑเธเนเธฅเนเธง", "เธขเธทเธเธขเธฑเธเธเธฒเธเธชเนเธงเธ"))
+    verified = sum(1 for c in checks if c["verdict"] in ("ยืนยันแล้ว", "ยืนยันบางส่วน"))
     sig = 0.62 * s + 0.22 * (f * math.copysign(1, s if abs(s) > 0.05 else 1)) + 0.16 * soc
     if verified:
         sig *= 1.0 + min(0.15, 0.05 * verified)
@@ -459,36 +459,36 @@ def _mag_pct(x):
 
 
 def _pct_txt(x):
-    return f"{x:+.0f}%" if x is not None else "เนเธกเนเธกเธตเธเนเธญเธกเธนเธฅ"
+    return f"{x:+.0f}%" if x is not None else "ไม่มีข้อมูล"
 
 
 def strike_reasons(row: dict, ctx: dict) -> list:
     """Plain-Thai explanation for one strike."""
     out = []
     up = row["kind"] == "CALL"
-    side = "เธเธถเนเธ" if up else "เธฅเธ"
+    side = "ขึ้น" if up else "ลง"
     d = row["dist_pct"]
     # 1. moneyness + distance vs expected move
     em = ctx["em_pct"]
     itm = (d < 0) if up else (d > 0)
     if itm:
         if up:
-            out.append(f"Strike เธเธตเนเน€เธเนเธ In-the-Money เธญเธขเธนเนเนเธฅเนเธง (เธฃเธฒเธเธฒเธซเธธเนเธ ${ctx.get('spot', 0):.2f} เธชเธนเธเธเธงเนเธฒ strike "
-                       f"{_mag_pct(d)}) เธเธถเธเธกเธตเธกเธนเธฅเธเนเธฒเธเธเน€เธซเธฅเธทเธญเนเธฅเธฐเนเธญเธเธฒเธชเธเธเธฐเธชเธนเธเธเธงเนเธฒเธชเธฑเธเธเธฒ OTM "
-                       f"เนเธ•เนเธเธฃเธตเน€เธกเธตเธขเธกเธเนเนเธเธเธเธงเนเธฒเธ•เธฒเธกเนเธเธ”เนเธงเธข")
+            out.append(f"Strike นี้เป็น In-the-Money อยู่แล้ว (ราคาหุ้น ${ctx.get('spot', 0):.2f} สูงกว่า strike "
+                       f"{_mag_pct(d)}) จึงมีมูลค่าคงเหลือและโอกาสชนะสูงกว่าสัญญา OTM "
+                       f"แต่พรีเมียมก็แพงกว่าตามไปด้วย")
         else:
-            out.append(f"Strike เธเธตเนเน€เธเนเธ In-the-Money เธญเธขเธนเนเนเธฅเนเธง (เธฃเธฒเธเธฒเธซเธธเนเธ ${ctx.get('spot', 0):.2f} เธ•เนเธณเธเธงเนเธฒ strike "
-                       f"{_mag_pct(d)}) เธเธถเธเธกเธตเธกเธนเธฅเธเนเธฒเธเธเน€เธซเธฅเธทเธญเนเธฅเธฐเนเธญเธเธฒเธชเธเธเธฐเธชเธนเธเธเธงเนเธฒเธชเธฑเธเธเธฒ OTM "
-                       f"เนเธ•เนเธเธฃเธตเน€เธกเธตเธขเธกเธเนเนเธเธเธเธงเนเธฒเธ•เธฒเธกเนเธเธ”เนเธงเธข")
+            out.append(f"Strike นี้เป็น In-the-Money อยู่แล้ว (ราคาหุ้น ${ctx.get('spot', 0):.2f} ต่ำกว่า strike "
+                       f"{_mag_pct(d)}) จึงมีมูลค่าคงเหลือและโอกาสชนะสูงกว่าสัญญา OTM "
+                       f"แต่พรีเมียมก็แพงกว่าตามไปด้วย")
     elif abs(d) <= em:
-        out.append(f"Strike เธญเธขเธนเนเธซเนเธฒเธเธเธฒเธเธฃเธฒเธเธฒเธเธฑเธเธเธธเธเธฑเธ {_mag_pct(d)} เธเธถเนเธเธญเธขเธนเนเนเธเธฃเธฐเธขเธฐเธเธฒเธฃเนเธเธงเนเธเธ—เธตเนเธ•เธฅเธฒเธ”เธเธฒเธ”เนเธงเน ยฑ{em:.1f}% "
-                   f"(Expected Move) เธเธถเธเธกเธตเนเธญเธเธฒเธชเธ–เธนเธเนเธ•เธฐเธชเธนเธ")
+        out.append(f"Strike อยู่ห่างจากราคาปัจจุบัน {_mag_pct(d)} ซึ่งอยู่ในระยะการแกว่งที่ตลาดคาดไว้ ±{em:.1f}% "
+                   f"(Expected Move) จึงมีโอกาสถูกแตะสูง")
     elif abs(d) <= 2 * em:
-        out.append(f"Strike เธซเนเธฒเธ {_mag_pct(d)} = เธเธฃเธฐเธกเธฒเธ“ {abs(d)/max(em,0.1):.1f} เน€เธ—เนเธฒเธเธญเธ Expected Move ยฑ{em:.1f}% "
-                   f"เธ•เนเธญเธเธกเธตเธเนเธฒเธงเธซเธฃเธทเธญเนเธกเน€เธกเธเธ•เธฑเธกเธซเธเธธเธเธเธถเธเธเธฐเนเธเธ–เธถเธ")
+        out.append(f"Strike ห่าง {_mag_pct(d)} = ประมาณ {abs(d)/max(em,0.1):.1f} เท่าของ Expected Move ±{em:.1f}% "
+                   f"ต้องมีข่าวหรือโมเมนตัมหนุนจึงจะไปถึง")
     else:
-        out.append(f"Strike เธซเนเธฒเธเนเธเธฅ {_mag_pct(d)} (เน€เธเธดเธ 2 เน€เธ—เนเธฒเธเธญเธ Expected Move ยฑ{em:.1f}%) "
-                   f"เธ•เนเธญเธเธกเธตเธเธฒเธฃเน€เธเธฅเธทเนเธญเธเนเธซเธงเธฃเธธเธเนเธฃเธเธเธดเธ”เธเธเธ•เธด")
+        out.append(f"Strike ห่างไกล {_mag_pct(d)} (เกิน 2 เท่าของ Expected Move ±{em:.1f}%) "
+                   f"ต้องมีการเคลื่อนไหวรุนแรงผิดปกติ")
     # 2. model vs history (the real edge test)
     # Compare *profit at expiry*, not the chance of merely touching the strike:
     # an in-the-money strike is "touched" almost by definition, so the touch
@@ -499,72 +499,72 @@ def strike_reasons(row: dict, ctx: dict) -> list:
     if ht is not None and pt is not None:
         gap = ht - pt
         if gap >= 5:
-            out.append(f"เธชเธ–เธดเธ•เธดเธเธฃเธดเธ 6 เน€เธ”เธทเธญเธ: เธชเธฑเธเธเธฒเนเธเธเธเธตเนเธเธเธฐเน€เธกเธทเนเธญเธซเธกเธ”เธญเธฒเธขเธธ {ht:.0f}% เธเธญเธเธฃเธญเธ "
-                       f"เธชเธนเธเธเธงเนเธฒเธ—เธตเนเนเธกเน€เธ”เธฅเธเธฃเธฐเน€เธกเธดเธ ({pt:.0f}%) โ’ เธเธฑเนเธ {row['kind']} เนเธ”เนเน€เธเธฃเธตเธขเธเน€เธเธดเธเธชเธ–เธดเธ•เธด "
-                       f"เน€เธเธฃเธฒเธฐเธ•เธฅเธฒเธ”เธ•เธฑเนเธเธฃเธฒเธเธฒเน€เธเธทเนเธญเธเธงเธฒเธกเน€เธชเธตเนเธขเธเนเธงเนเธกเธฒเธเธเธงเนเธฒเธ—เธตเนเน€เธเธดเธ”เธเธฃเธดเธ")
+            out.append(f"สถิติจริง 6 เดือน: สัญญาแบบนี้ชนะเมื่อหมดอายุ {ht:.0f}% ของรอบ "
+                       f"สูงกว่าที่โมเดลประเมิน ({pt:.0f}%) → ฝั่ง {row['kind']} ได้เปรียบเชิงสถิติ "
+                       f"เพราะตลาดตั้งราคาเผื่อความเสี่ยงไว้มากกว่าที่เกิดจริง")
         elif gap <= -5:
-            out.append(f"เธชเธ–เธดเธ•เธดเธเธฃเธดเธ 6 เน€เธ”เธทเธญเธ: เธชเธฑเธเธเธฒเนเธเธเธเธตเนเธเธเธฐเน€เธเธตเธขเธ {ht:.0f}% เธ•เนเธณเธเธงเนเธฒเธ—เธตเนเนเธกเน€เธ”เธฅเนเธซเน ({pt:.0f}%) "
-                       f"โ’ เธ•เธฅเธฒเธ”เธญเธฒเธเธ•เธฑเนเธเธฃเธฒเธเธฒเน€เธเธดเธ”เน€เธเธทเนเธญเนเธงเนเธกเธฒเธเน€เธเธดเธเนเธ เธเธฃเธตเน€เธกเธตเธขเธกเนเธเธเธเธงเนเธฒเธเธงเธฒเธกเน€เธชเธตเนเธขเธเธเธฃเธดเธ")
+            out.append(f"สถิติจริง 6 เดือน: สัญญาแบบนี้ชนะเพียง {ht:.0f}% ต่ำกว่าที่โมเดลให้ ({pt:.0f}%) "
+                       f"→ ตลาดอาจตั้งราคาเปิดเผื่อไว้มากเกินไป พรีเมียมแพงกว่าความเสี่ยงจริง")
         else:
-            out.append(f"เธชเธ–เธดเธ•เธดเธเธฃเธดเธ 6 เน€เธ”เธทเธญเธ ({ht:.0f}%) เธเธฑเธเธ—เธตเนเนเธกเน€เธ”เธฅเนเธซเน ({pt:.0f}%) เธชเธญเธ”เธเธฅเนเธญเธเธเธฑเธ "
-                       f"โ’ เธเธงเธฒเธกเธเนเธฒเธเธฐเน€เธเนเธเธเธตเนเน€เธเธทเนเธญเธ–เธทเธญเนเธ”เนเธเธญเธชเธกเธเธงเธฃ")
+            out.append(f"สถิติจริง 6 เดือน ({ht:.0f}%) กับที่โมเดลให้ ({pt:.0f}%) สอดคล้องกัน "
+                       f"→ ความน่าจะเป็นนี้เชื่อถือได้พอสมควร")
     # 3. probability of finishing beyond breakeven
     hl = row.get("hist_win")
     if hl is not None and row.get("hist_n"):
-        out.append(f"เธเธทเนเธญเธชเธฑเธเธเธฒเธเธตเนเนเธฅเนเธงเธเธณเนเธฃเน€เธกเธทเนเธญเธซเธกเธ”เธญเธฒเธขเธธ: เธชเธ–เธดเธ•เธด {ctx['months']} เน€เธ”เธทเธญเธเธ—เธตเนเธเนเธฒเธเธกเธฒเน€เธ—เธตเธขเธเน€เธ—เนเธฒ {hl:.0f}% "
-                   f"(เธเธฒเธ {row['hist_n']} เธฃเธญเธ) ยท เนเธกเน€เธ”เธฅเนเธซเน {row['pop']:.0f}% (เธเนเธงเธ {row['pop_lo']:.0f}โ€“{row['pop_hi']:.0f}%)")
+        out.append(f"ซื้อสัญญานี้แล้วกำไรเมื่อหมดอายุ: สถิติ {ctx['months']} เดือนที่ผ่านมาเทียบเท่า {hl:.0f}% "
+                   f"(จาก {row['hist_n']} รอบ) · โมเดลให้ {row['pop']:.0f}% (ช่วง {row['pop_lo']:.0f}–{row['pop_hi']:.0f}%)")
     # 4. IV: skew of this strike + overall IV regime
     vrp = ctx.get("vrp", 0)
     ivx = row.get("iv_vs_atm")
     if ivx is not None:
         if ivx > 3:
-            out.append(f"IV เธเธญเธเธชเธฑเธเธเธฒเธเธตเน {row['iv']:.0f}% เธชเธนเธเธเธงเนเธฒ ATM {ivx:+.0f} เธเธธเธ” โ€” เธเธฃเธตเน€เธกเธตเธขเธกเธเธงเธกเธเธฒเธเธเธงเธฒเธกเธเธฑเธเธเธงเธ "
-                       f"เน€เธเธเธฒเธฐ strike เธเธตเน (เธเธทเนเธญเนเธเธเธเธงเนเธฒเน€เธเธทเนเธญเธเธฃเนเธงเธกเธฃเธธเนเธ)")
+            out.append(f"IV ของสัญญานี้ {row['iv']:.0f}% สูงกว่า ATM {ivx:+.0f} จุด — พรีเมียมบวมจากความผันผวน "
+                       f"เฉพาะ strike นี้ (ซื้อแพงกว่าเพื่อนร่วมรุ่น)")
         elif ivx < -3:
-            out.append(f"IV เธเธญเธเธชเธฑเธเธเธฒเธเธตเน {row['iv']:.0f}% เธ•เนเธณเธเธงเนเธฒ ATM {ivx:.0f} เธเธธเธ” โ€” เนเธ”เนเน€เธเธฃเธตเธขเธเธเธฑเนเธเธเธทเนเธญเน€เธกเธทเนเธญเน€เธ—เธตเธขเธเธ—เธฑเนเธเธชเธฒเธข")
-    out.append(f"เธฃเธฐเธ”เธฑเธ IV เธเธญเธเธซเธธเนเธเธ—เธฑเนเธเธ•เธฑเธงเธ•เธญเธเธเธตเน {row['iv_tag']} (เธญเธฑเธเธ”เธฑเธ {ctx.get('iv_rank', 50):.0f}/100 เน€เธ—เธตเธขเธ 1 เธเธตเธ—เธตเนเธเนเธฒเธเธกเธฒ) "
-               f"ยท เธเธงเธฒเธกเธเธฑเธเธเธงเธเธเธฃเธดเธ 6 เน€เธ”เธทเธญเธ {ctx.get('sigma_hist', 0):.0f}% ยท เธชเนเธงเธเธ•เนเธฒเธ {vrp:+.1f} เธเธธเธ” โ’ "
-               + ("IV เธชเธนเธเธเธงเนเธฒเธเธงเธฒเธกเธเธฑเธเธเธงเธเธเธฃเธดเธ เธญเธญเธเธเธฑเธเนเธ”เธขเธฃเธงเธกเธเนเธญเธเนเธเธ—เธฒเธเนเธเธ เธ•เนเธญเธเธเธเธฐเนเธซเนเธกเธฒเธเธเธงเนเธฒเธเธฃเธตเน€เธกเธตเธขเธกเธ—เธตเนเธเนเธฒเธข"
+            out.append(f"IV ของสัญญานี้ {row['iv']:.0f}% ต่ำกว่า ATM {ivx:.0f} จุด — ได้เปรียบฝั่งซื้อเมื่อเทียบทั้งสาย")
+    out.append(f"ระดับ IV ของหุ้นทั้งตัวตอนนี้ {row['iv_tag']} (อันดับ {ctx.get('iv_rank', 50):.0f}/100 เทียบ 1 ปีที่ผ่านมา) "
+               f"· ความผันผวนจริง 6 เดือน {ctx.get('sigma_hist', 0):.0f}% · ส่วนต่าง {vrp:+.1f} จุด → "
+               + ("IV สูงกว่าความผันผวนจริง ออปชันโดยรวมค่อนไปทางแพง ต้องชนะให้มากกว่าพรีเมียมที่จ่าย"
                   if vrp > 4 else
-                  "IV เธ•เนเธณเธเธงเนเธฒเธเธงเธฒเธกเธเธฑเธเธเธงเธเธเธฃเธดเธ เธญเธญเธเธเธฑเธเนเธ”เธขเธฃเธงเธกเธเนเธญเธเนเธเธ—เธฒเธเธ–เธนเธ" if vrp < -2 else
-                  "IV เนเธเธฅเนเน€เธเธตเธขเธเธเธงเธฒเธกเธเธฑเธเธเธงเธเธเธฃเธดเธ เธฃเธฒเธเธฒเธญเธญเธเธเธฑเธเธ–เธทเธญเธงเนเธฒเน€เธเนเธเธเธฃเธฃเธก"))
+                  "IV ต่ำกว่าความผันผวนจริง ออปชันโดยรวมค่อนไปทางถูก" if vrp < -2 else
+                  "IV ใกล้เคียงความผันผวนจริง ราคาออปชันถือว่าเป็นธรรม"))
     # 5. liquidity / execution
     if row.get("liquid"):
-        out.append(f"เธชเธ เธฒเธเธเธฅเนเธญเธเธเนเธฒเธเน€เธเธ“เธ‘เน: เธเธฃเธดเธกเธฒเธ“ {row['volume']:,} เธชเธฑเธเธเธฒ ยท OI {row['oi']:,} ยท Spread {row['spread_pct']:.1f}%")
+        out.append(f"สภาพคล่องผ่านเกณฑ์: ปริมาณ {row['volume']:,} สัญญา · OI {row['oi']:,} · Spread {row['spread_pct']:.1f}%")
     else:
-        out.append(f"เธชเธ เธฒเธเธเธฅเนเธญเธเธ•เนเธณ: เธเธฃเธดเธกเธฒเธ“ {row['volume']:,} ยท OI {row['oi']:,} ยท Spread {row['spread_pct']:.1f}% "
-                   f"โ€” เน€เธเนเธฒเธญเธญเธเธขเธฒเธ เธฃเธฒเธเธฒเนเธ–เธฅเนเธ”เน")
+        out.append(f"สภาพคล่องต่ำ: ปริมาณ {row['volume']:,} · OI {row['oi']:,} · Spread {row['spread_pct']:.1f}% "
+                   f"— เข้าออกยาก ราคาไถลได้")
     # 6. directional evidence
     t, f = ctx.get("tech") or {}, ctx.get("flow") or {}
     bits = []
     if t:
         bits.append(f"RSI {t.get('rsi')} ยท MACD hist {t.get('macd_hist')} ยท ADX {t.get('adx')} ยท Stoch {t.get('stoch')}")
     if f:
-        bits.append(f"เธฃเธฒเธเธฒเน€เธ—เธตเธขเธ VWAP {'เน€เธซเธเธทเธญ' if (f.get('price') or 0) >= (f.get('vwap') or 0) else 'เนเธ•เน'} "
+        bits.append(f"ราคาเทียบ VWAP {'เหนือ' if (f.get('price') or 0) >= (f.get('vwap') or 0) else 'ใต้'} "
                     f"ยท RVOL {f.get('rvol')} ยท P/C volume {f.get('pc_vol')}")
     if bits:
-        lean = "เธชเธเธฑเธเธชเธเธธเธ" if (ctx["signal"] > 0) == up else "เธชเธงเธเธ—เธฒเธ"
-        out.append(f"เธญเธดเธเธ”เธดเน€เธเน€เธ•เธญเธฃเน: {' | '.join(bits)} โ’ {lean}เธเธฑเนเธ{side}")
+        lean = "สนับสนุน" if (ctx["signal"] > 0) == up else "สวนทาง"
+        out.append(f"อินดิเคเตอร์: {' | '.join(bits)} → {lean}ฝั่ง{side}")
     # 7. greeks reality check
-    out.append(f"Greeks: ฮ” {row['delta']:.2f} ยท ฮ {row['theta']:+.3f}/เธงเธฑเธ ({row['theta_bleed']:.1f}% เธเธญเธเธเธฃเธตเน€เธกเธตเธขเธก/เธงเธฑเธ) "
-               f"ยท Vega {row['vega']:.3f} ยท เธเธธเธ”เธเธธเนเธกเธ—เธธเธ {row['breakeven']:.2f}")
+    out.append(f"Greeks: Δ {row['delta']:.2f} · Θ {row['theta']:+.3f}/วัน ({row['theta_bleed']:.1f}% ของพรีเมียม/วัน) "
+               f"· Vega {row['vega']:.3f} · จุดคุ้มทุน {row['breakeven']:.2f}")
     return out
 
 
 def strike_risks(row: dict, ctx: dict) -> list:
     out = []
     if ctx.get("earnings"):
-        out.append(f"โ  เธเธเธเธฒเธฃเน€เธเธดเธเธญเธญเธเธงเธฑเธเธ—เธตเน {ctx['earnings']} เธเนเธญเธเธซเธกเธ”เธญเธฒเธขเธธ โ’ IV crush เน€เธชเธตเนเธขเธเธชเธนเธเนเธกเนเธ—เธดเธจเธ—เธฒเธเธ–เธนเธ")
+        out.append(f"⚠ งบการเงินออกวันที่ {ctx['earnings']} ก่อนหมดอายุ → IV crush เสี่ยงสูงแม้ทิศทางถูก")
     if row.get("spread_pct", 0) > 12:
-        out.append(f"โ  Spread เธเธงเนเธฒเธ {row['spread_pct']:.1f}% เธ•เนเธเธ—เธธเธเนเธเธเธชเธนเธ")
+        out.append(f"⚠ Spread กว้าง {row['spread_pct']:.1f}% ต้นทุนแฝงสูง")
     if row.get("p_zero") is not None and row["p_zero"] > 70:
-        out.append(f"โ  เนเธญเธเธฒเธชเธซเธกเธ”เธเนเธฒเน€เธเนเธเธจเธนเธเธขเน {row['p_zero']:.0f}% (เธ–เนเธฒเธ–เธทเธญเธ–เธถเธเธซเธกเธ”เธญเธฒเธขเธธ)")
+        out.append(f"⚠ โอกาสหมดค่าเป็นศูนย์ {row['p_zero']:.0f}% (ถ้าถือถึงหมดอายุ)")
     if row.get("theta_bleed", 0) > 6:
-        out.append(f"โ  Theta เนเธฅเนเธเธฃเธตเน€เธกเธตเธขเธก {row['theta_bleed']:.1f}% เธ•เนเธญเธงเธฑเธ")
+        out.append(f"⚠ Theta ไล่พรีเมียม {row['theta_bleed']:.1f}% ต่อวัน")
     if row.get("reliability", 100) < 55:
-        out.append(f"โ  เธเธงเธฒเธกเธเนเธฒเน€เธเธทเนเธญเธ–เธทเธญเธเธญเธเธเนเธญเธกเธนเธฅเธ•เนเธณ ({row['reliability']:.0f}/100) โ€” เธ•เธฑเธงเธญเธขเนเธฒเธเธชเธ–เธดเธ•เธด/เธชเธ เธฒเธเธเธฅเนเธญเธเธเนเธญเธข")
+        out.append(f"⚠ ความน่าเชื่อถือของข้อมูลต่ำ ({row['reliability']:.0f}/100) — ตัวอย่างสถิติ/สภาพคล่องน้อย")
     if ctx.get("hist_n", 0) and ctx["hist_n"] < 60:
-        out.append(f"โ  เธ•เธฑเธงเธญเธขเนเธฒเธเธชเธ–เธดเธ•เธด 6 เน€เธ”เธทเธญเธเธกเธตเน€เธเธตเธขเธ {ctx['hist_n']} เธฃเธญเธ")
+        out.append(f"⚠ ตัวอย่างสถิติ 6 เดือนมีเพียง {ctx['hist_n']} รอบ")
     return out
 
 
@@ -613,7 +613,7 @@ def build_strike(sym: str, row_c: dict, spot: float, kind: str, dte: float, n_da
         r["pop"] = outcome["hist_win"]         # headline = real, counted outcome
         r["pop_lo"] = outcome["hist_win_lo"]
         r["pop_hi"] = outcome["hist_win_hi"]
-        r["pop_source"] = "เธเธฃเธดเธ"               # real history
+        r["pop_source"] = "จริง"               # real history
         r.update(outcome)
         # The same count over the last six and twelve months, so a recent change
         # in behaviour is visible instead of being averaged away by two years of
@@ -634,7 +634,7 @@ def build_strike(sym: str, row_c: dict, spot: float, kind: str, dte: float, n_da
         if outcome.get("hist_touch") is not None:
             r["p_touch"] = outcome["hist_touch"]
     else:
-        r["pop_source"] = "เนเธเธเธเธณเธฅเธญเธ"            # fell back to the model
+        r["pop_source"] = "แบบจำลอง"            # fell back to the model
 
     spread = (ask - bid) / premium if (bid > 0 and ask > 0) else 1.0
     spread = float(np.clip(nz(spread, 1.0), 0.0, 3.0))
@@ -663,7 +663,7 @@ def build_strike(sym: str, row_c: dict, spot: float, kind: str, dte: float, n_da
     # outside that band the score is deliberately discounted instead of boosted.
     #
     # Note on EV: buying a long single-leg option has a *negative* expectancy by
-    # construction โ€” you pay the spread and rent volatility.  Scoring EV on an
+    # construction — you pay the spread and rent volatility.  Scoring EV on an
     # absolute scale therefore pins every strike near the same floor and nothing
     # can ever rank well.  What actually matters is which strike gives the least
     # bad (or genuinely positive) expectancy *relative to its siblings*, so EV is
@@ -727,7 +727,7 @@ def build_strike(sym: str, row_c: dict, spot: float, kind: str, dte: float, n_da
         volume=int(vol_c), oi=int(oi_c), spread_pct=round(spread * 100, 1),
         cheap=bool(cheap), liquid=bool(liq >= 0.35 and liquid), premium_pct=round(premium / spot * 100, 2),
         iv=round(iv * 100, 1), iv_vs_atm=round((iv - atm_iv) * 100, 1),
-        iv_tag="เธ–เธนเธ" if ivr_ctx < 30 else ("เนเธเธ" if ivr_ctx > 70 else "เธเธฅเธฒเธ"),
+        iv_tag="ถูก" if ivr_ctx < 30 else ("แพง" if ivr_ctx > 70 else "กลาง"),
         delta=round(float(g["delta"]), 4), gamma=round(float(g["gamma"]), 5),
         theta=round(float(g["theta"]), 4), vega=round(float(g["vega"]), 4),
         theta_bleed=round(nz(theta_bleed), 1), liquidity=round(liq, 3),
@@ -738,9 +738,9 @@ def build_strike(sym: str, row_c: dict, spot: float, kind: str, dte: float, n_da
     out.update(r)
     out["why"] = strike_reasons(out, ctx)
     out["risks"] = strike_risks(out, ctx)
-    out["headline"] = (f"{kind} ${out['strike']:g} ยท เธซเธกเธ”เธญเธฒเธขเธธ {out.get('expiry')} ({out['dte']:.0f} เธงเธฑเธ) ยท "
-                       f"เธเธฃเธตเน€เธกเธตเธขเธก ${out['premium']} ยท เนเธญเธเธฒเธชเธเธเธฐ {nz(out.get('pop')):.0f}% "
-                       f"(เธเนเธงเธ {nz(out.get('pop_lo')):.0f}โ€“{nz(out.get('pop_hi')):.0f}%)")
+    out["headline"] = (f"{kind} ${out['strike']:g} · หมดอายุ {out.get('expiry')} ({out['dte']:.0f} วัน) · "
+                       f"พรีเมียม ${out['premium']} · โอกาสชนะ {nz(out.get('pop')):.0f}% "
+                       f"(ช่วง {nz(out.get('pop_lo')):.0f}–{nz(out.get('pop_hi')):.0f}%)")
     return out
 
 
@@ -851,15 +851,15 @@ def _sl_rank(group: list, net: float, ivr: float) -> None:
         # price the interesting tail is the other one, so it is recomputed.
         z, pv = x.get("edge_z"), x.get("edge_p")
         if z is None or pv is None:
-            x["edge_signif"] = "เนเธกเนเธกเธตเธเนเธญเธกเธนเธฅเธเธญ"
+            x["edge_signif"] = "ไม่มีข้อมูลพอ"
             edge = 50.0 if edge == 50.0 else 50.0 + (edge - 50.0) * 0.4
         elif z > 0 and pv < alpha:
-            x["edge_signif"] = "เธกเธตเธเธฑเธขเธชเธณเธเธฑเธ"
+            x["edge_signif"] = "มีนัยสำคัญ"
         elif z < 0 and quant.norm_cdf(z) < alpha:
-            x["edge_signif"] = "เนเธขเนเธเธงเนเธฒเธ•เธฅเธฒเธ”เธเธฑเธ”เน€เธเธ"
+            x["edge_signif"] = "แย่กว่าตลาดชัดเจน"
             edge = 50.0 + (edge - 50.0) * 0.5
         else:
-            x["edge_signif"] = "เธขเธฑเธเนเธกเนเธเธฑเธ”เน€เธเธ"
+            x["edge_signif"] = "ยังไม่ชัดเจน"
             # An edge that is not distinguishable from noise should not move the
             # score much in either direction.
             edge = 50.0 + (edge - 50.0) * 0.35
@@ -875,7 +875,7 @@ def _sl_rank(group: list, net: float, ivr: float) -> None:
             omega *= 0.85
         # A pick whose counted edge is merely noise must not outrank one that is
         # actually evidenced at this sample size.
-        if x.get("edge_signif") == "เธขเธฑเธเนเธกเนเธเธฑเธ”เน€เธเธ":
+        if x.get("edge_signif") == "ยังไม่ชัดเจน":
             omega *= 0.95
         x["omega"] = round(float(np.clip(nz(omega), 0, 100)), 1)
         x["verdict"] = ("ULTIMATE" if x["omega"] >= 72 else "HIGH" if x["omega"] >= 62 else
@@ -892,59 +892,59 @@ def _horizon_reason(best: dict | None, top: dict | None, kind: str, dte: int,
     """
     pick = best or top
     if not pick:
-        return f"เนเธกเนเธเธเธชเธฑเธเธเธฒ {kind} เธ—เธตเนเธกเธตเธชเธ เธฒเธเธเธฅเนเธญเธเธเธญเนเธเธเนเธงเธ {dte} เธงเธฑเธเธเธตเน"
+        return f"ไม่พบสัญญา {kind} ที่มีสภาพคล่องพอในช่วง {dte} วันนี้"
     strike = nz(pick.get("strike"))
     dist = (strike / spot - 1) * 100 if spot else 0.0
     # Where the strike sits relative to spot is a plain fact; the wording must not
     # imply a direction the trade does not need.  A PUT can be struck above spot
     # and still be the pick, so describe the position, not the expectation.
-    where = ("เธชเธนเธเธเธงเนเธฒเธฃเธฒเธเธฒเธเธฑเธเธเธธเธเธฑเธ" if dist >= 0 else "เธ•เนเธณเธเธงเนเธฒเธฃเธฒเธเธฒเธเธฑเธเธเธธเธเธฑเธ")
+    where = ("สูงกว่าราคาปัจจุบัน" if dist >= 0 else "ต่ำกว่าราคาปัจจุบัน")
     bits = []
     if kind == "CALL":
-        bits.append(f"เธ•เนเธญเธเธเธดเธ”เน€เธซเธเธทเธญ ${pick['breakeven']:g} เธ เธฒเธขเนเธ {dte} เธงเธฑเธ "
+        bits.append(f"ต้องปิดเหนือ ${pick['breakeven']:g} ภายใน {dte} วัน "
                     f"(strike ${strike:g} {where} {abs(dist):.1f}%)")
     else:
-        bits.append(f"เธ•เนเธญเธเธเธดเธ”เนเธ•เน ${pick['breakeven']:g} เธ เธฒเธขเนเธ {dte} เธงเธฑเธ "
+        bits.append(f"ต้องปิดใต้ ${pick['breakeven']:g} ภายใน {dte} วัน "
                     f"(strike ${strike:g} {where} {abs(dist):.1f}%)")
 
     wc, n = pick.get("hist_win_count"), pick.get("hist_n")
     if wc is not None and n:
-        bits.append(f"เธเธฑเธเธเธฃเธดเธเธเธฒเธเธเธฃเธฐเธงเธฑเธ•เธด {n} เธฃเธญเธเธชเธนเธ•เธฃเน€เธ”เธตเธขเธงเธเธฑเธ: เธเธณเนเธฃ {wc} เธฃเธญเธ "
+        bits.append(f"นับจริงจากประวัติ {n} รอบสูตรเดียวกัน: กำไร {wc} รอบ "
                     f"= {nz(pick.get('pop')):.0f}% "
-                    f"(เธเนเธงเธ 95% {nz(pick.get('pop_lo')):.0f}โ€“{nz(pick.get('pop_hi')):.0f}%)")
+                    f"(ช่วง 95% {nz(pick.get('pop_lo')):.0f}–{nz(pick.get('pop_hi')):.0f}%)")
     neff = pick.get("hist_n_eff")
     if neff and n and neff < n * 0.9:
         # Overlapping windows are not independent evidence, and hiding that
         # would make the far expiries look more certain than they are.
-        bits.append(f"เธฃเธญเธเธ—เธตเนเน€เธเนเธเธญเธดเธชเธฃเธฐเธเธฃเธดเธเธเธฃเธฐเธกเธฒเธ“ {neff} เธฃเธญเธ (เธซเธเนเธฒเธ•เนเธฒเธเธเนเธญเธเธเธฑเธ)")
+        bits.append(f"รอบที่เป็นอิสระจริงประมาณ {neff} รอบ (หน้าต่างซ้อนกัน)")
 
     pnl = pick.get("hist_avg_pnl")
     if pnl is not None:
         pf = pick.get("hist_profit_factor")
-        bits.append(f"เธเธณเนเธฃเน€เธเธฅเธตเนเธขเธ•เนเธญเธชเธฑเธเธเธฒ ${pnl:+.2f}"
-                    + (f" ยท เธเธณเนเธฃ/เธเธฒเธ”เธ—เธธเธเธฃเธงเธก {pf:.2f} เน€เธ—เนเธฒ" if pf is not None else ""))
+        bits.append(f"กำไรเฉลี่ยต่อสัญญา ${pnl:+.2f}"
+                    + (f" · กำไร/ขาดทุนรวม {pf:.2f} เท่า" if pf is not None else ""))
 
     if pick.get("model_pop") is not None:
-        bits.append(f"เธฃเธฒเธเธฒเธ—เธตเนเธ•เธฅเธฒเธ”เน€เธฃเธตเธขเธเธญเธขเธนเนเธเธดเธ”เน€เธเนเธเนเธญเธเธฒเธชเธฃเธฒเธง {nz(pick.get('model_pop')):.0f}% "
-                    f"โ’ เธ•เนเธฒเธเธเธฒเธเธเธญเธเธเธฃเธดเธ {nz(pick.get('hist_edge')):+.0f} เธเธธเธ”")
+        bits.append(f"ราคาที่ตลาดเรียกอยู่คิดเป็นโอกาสราว {nz(pick.get('model_pop')):.0f}% "
+                    f"→ ต่างจากของจริง {nz(pick.get('hist_edge')):+.0f} จุด")
 
     sig = pick.get("edge_signif")
-    if sig == "เธกเธตเธเธฑเธขเธชเธณเธเธฑเธ":
-        bits.append("เธชเนเธงเธเธ•เนเธฒเธเธเธตเนเธเนเธฒเธเธเธฒเธฃเธ—เธ”เธชเธญเธเธ—เธฒเธเธชเธ–เธดเธ•เธดเธ—เธตเนเธเธณเธเธงเธเธ•เธฑเธงเธญเธขเนเธฒเธเธเธตเน (เธเธฑเธเธฃเธงเธกเธเธฒเธฃเน€เธ—เธตเธขเธเธซเธฅเธฒเธข strike เนเธฅเนเธง)")
-    elif sig == "เนเธขเนเธเธงเนเธฒเธ•เธฅเธฒเธ”เธเธฑเธ”เน€เธเธ":
-        bits.append("เธฃเธฐเธงเธฑเธ: เธชเธ–เธดเธ•เธดเธเธฃเธดเธเนเธขเนเธเธงเนเธฒเธฃเธฒเธเธฒเธ—เธตเนเธ•เธฅเธฒเธ”เน€เธฃเธตเธขเธเธญเธขเนเธฒเธเธเธฑเธ”เน€เธเธ")
-    elif sig == "เธขเธฑเธเนเธกเนเธเธฑเธ”เน€เธเธ":
-        bits.append("เธขเธฑเธเธเธญเธเนเธกเนเนเธ”เนเธงเนเธฒเธชเนเธงเธเธ•เนเธฒเธเธเธตเนเน€เธเนเธเธเธญเธเธเธฃเธดเธเธซเธฃเธทเธญเธเธงเธฒเธกเธเธฑเธเน€เธญเธดเธ")
+    if sig == "มีนัยสำคัญ":
+        bits.append("ส่วนต่างนี้ผ่านการทดสอบทางสถิติที่จำนวนตัวอย่างนี้ (นับรวมการเทียบหลาย strike แล้ว)")
+    elif sig == "แย่กว่าตลาดชัดเจน":
+        bits.append("ระวัง: สถิติจริงแย่กว่าราคาที่ตลาดเรียกอย่างชัดเจน")
+    elif sig == "ยังไม่ชัดเจน":
+        bits.append("ยังบอกไม่ได้ว่าส่วนต่างนี้เป็นของจริงหรือความบังเอิญ")
 
     if pick.get("cheap"):
-        bits.append("เธเธฃเธตเน€เธกเธตเธขเธกเธ–เธนเธ (เนเธกเนเน€เธเธดเธ 3% เธเธญเธเธฃเธฒเธเธฒเธซเธธเนเธ)")
+        bits.append("พรีเมียมถูก (ไม่เกิน 3% ของราคาหุ้น)")
     if pick.get("liquid"):
-        bits.append(f"เธเธฃเธดเธกเธฒเธ“/เธชเธ–เธฒเธเธฐเธเธเธเนเธฒเธเน€เธเธตเธขเธเธเธญ (spread {nz(pick.get('spread_pct')):.0f}%)")
+        bits.append(f"ปริมาณ/สถานะคงค้างเพียงพอ (spread {nz(pick.get('spread_pct')):.0f}%)")
     # A very wide quoted spread is a real cost even when volume looks fine, so it
     # is worth naming when it is the thing holding the pick back.
     elif nz(pick.get("spread_pct")) > 25:
-        bits.append(f"เธฃเธฐเธงเธฑเธ: spread เธเธงเนเธฒเธ {nz(pick.get('spread_pct')):.0f}% (เธเธฒเธ”เธ—เธธเธเธ—เธฑเธเธ—เธตเธ—เธตเนเธเธทเนเธญ)")
-    bits.append(f"เธ•เธฅเธฒเธ”เธเธฒเธ”เนเธเธงเนเธ ยฑ${em:.2f} เธเธเธ–เธถเธเธงเธฑเธเธซเธกเธ”เธญเธฒเธขเธธเธเธตเน")
+        bits.append(f"ระวัง: spread กว้าง {nz(pick.get('spread_pct')):.0f}% (ขาดทุนทันทีที่ซื้อ)")
+    bits.append(f"ตลาดคาดแกว่ง ±${em:.2f} จนถึงวันหมดอายุนี้")
     return " ยท ".join(bits)
 
 
@@ -1040,7 +1040,7 @@ def horizon_view(ch: dict, spot: float, close, high, low, atm_iv: float, sigma_h
         out[exp] = dict(
             expiry=exp, dte=dte, n_days=n_days,
             weekday=_WEEKDAY_TH[datetime.strptime(exp, "%Y-%m-%d").weekday()],
-            label=f"{exp} ยท {_WEEKDAY_TH[datetime.strptime(exp, '%Y-%m-%d').weekday()]} (เธญเธตเธ {dte} เธงเธฑเธ)",
+            label=f"{exp} · {_WEEKDAY_TH[datetime.strptime(exp, '%Y-%m-%d').weekday()]} (อีก {dte} วัน)",
             expected_move=round(em, 2), em_low=round(spot - em, 2), em_high=round(spot + em, 2),
             sigma=round(sigma_mix * 100, 1),
             call=slim_strike(tc), put=slim_strike(tp),
@@ -1205,13 +1205,13 @@ def _analyze_inner(sym: str) -> dict | None:
     else:
         _fresh = int(_fresh)
     if _fresh >= 3:
-        news_state, news_note = "เธกเธตเธเนเธฒเธงเนเธซเธกเน", f"เธเนเธฒเธงเนเธซเธกเน {_fresh} เธเธดเนเธเนเธ 72 เธเธก."
+        news_state, news_note = "มีข่าวใหม่", f"ข่าวใหม่ {_fresh} ชิ้นใน 72 ชม."
     elif _fresh >= 1:
-        news_state, news_note = "เธเนเธฒเธงเธเธฒเธ", f"เธเนเธฒเธงเนเธซเธกเนเน€เธเธตเธขเธ {_fresh} เธเธดเนเธเนเธ 72 เธเธก."
+        news_state, news_note = "ข่าวบาง", f"ข่าวใหม่เพียง {_fresh} ชิ้นใน 72 ชม."
     elif _items:
-        news_state, news_note = "เธกเธตเนเธ•เนเธเนเธฒเธงเน€เธเนเธฒ", "เธเนเธฒเธงเธ—เธตเนเธ”เธถเธเนเธ”เนเน€เธเนเธฒเธเธงเนเธฒ 3 เธงเธฑเธเธ—เธฑเนเธเธซเธกเธ”"
+        news_state, news_note = "มีแต่ข่าวเก่า", "ข่าวที่ดึงได้เก่ากว่า 3 วันทั้งหมด"
     else:
-        news_state, news_note = "เนเธกเนเธกเธตเธเนเธฒเธง", "เธ”เธถเธเธเนเธฒเธงเนเธกเนเนเธ”เนเน€เธฅเธขเนเธเธฃเธญเธเธเธตเน"
+        news_state, news_note = "ไม่มีข่าว", "ดึงข่าวไม่ได้เลยในรอบนี้"
 
     if _fresh >= 1:
         weights = dict(flow=0.34, tech=0.46, news=0.20)
@@ -1271,7 +1271,7 @@ def _analyze_inner(sym: str) -> dict | None:
     base["timings"] = _T
 
     if not (ch and ch.get("rows")):
-        base.update(error="เนเธกเนเธกเธตเธเนเธญเธกเธนเธฅเธญเธญเธเธเธฑเธ (CBOE) เธชเธณเธซเธฃเธฑเธเธซเธธเนเธเธเธตเน", verdict="NONE", omega=0.0)
+        base.update(error="ไม่มีข้อมูลออปชัน (CBOE) สำหรับหุ้นนี้", verdict="NONE", omega=0.0)
         return base
 
     # ---- pick the expiry ---------------------------------------------------
@@ -1286,7 +1286,7 @@ def _analyze_inner(sym: str) -> dict | None:
             exps[r["expiry"]] = dt
     base["expiries"] = sorted([dict(expiry=e, dte=v) for e, v in exps.items()], key=lambda x: x["dte"])
     if not exps:
-        base.update(error=f"เนเธกเนเธกเธตเธญเธญเธเธเธฑเธเธซเธกเธ”เธญเธฒเธขเธธเนเธเธเนเธงเธ {MIN_DTE}-{MAX_DTE} เธงเธฑเธ", verdict="NONE", omega=0.0)
+        base.update(error=f"ไม่มีออปชันหมดอายุในช่วง {MIN_DTE}-{MAX_DTE} วัน", verdict="NONE", omega=0.0)
         return base
     exp = min(exps, key=lambda e: abs(exps[e] - TARGET_DTE) + (0 if 2 <= exps[e] <= 12 else 4))
     dte = exps[exp]
@@ -1447,7 +1447,7 @@ def _analyze_inner(sym: str) -> dict | None:
         base["expiries"] = {}
 
     # ---- narrative ---------------------------------------------------------
-    trend = ("เธเธฒเธเธถเนเธ" if d_info.get("stack") == 1 else "เธเธฒเธฅเธ" if d_info.get("stack") == -1 else "เนเธฃเนเธ—เธดเธจเธ—เธฒเธ")
+    trend = ("ขาขึ้น" if d_info.get("stack") == 1 else "ขาลง" if d_info.get("stack") == -1 else "ไร้ทิศทาง")
     volw = float(np.mean(np.abs(logret[-5:])) * 100) if len(logret) > 5 else 0.0
     base.update(
         expiry=exp, dte=dte, n_days=n_days, expected_move=round(em, 2),
@@ -1463,7 +1463,7 @@ def _analyze_inner(sym: str) -> dict | None:
                   best=round(float(np.max(dist["rel"]) * 100), 1) if dist else None,
                   worst=round(float(np.min(dist["rel"]) * 100), 1) if dist else None,
                   window_days=HIST_WINDOW),
-        regime=dict(trend=trend, iv_tag="เธ–เธนเธ" if ivr < 30 else ("เนเธเธ" if ivr > 70 else "เธเธฅเธฒเธ"),
+        regime=dict(trend=trend, iv_tag="ถูก" if ivr < 30 else ("แพง" if ivr > 70 else "กลาง"),
                     squeeze=bool(d_info.get("squeeze")), atr_pct=d_info.get("atr_pct")),
     )
     if primary:
@@ -1485,65 +1485,65 @@ def _analyze_inner(sym: str) -> dict | None:
     _vp = sum(1 for r in _tv if r["dir"] == "PUT")
     base["tech_tally"] = dict(call=_vc, put=_vp, neutral=len(_tv) - _vc - _vp)
     if _fresh >= 1:
-        guide.append(f"เธเนเธฒเธง: {news_state} โ€” {news_note} "
-                     f"(เธเนเธณเธซเธเธฑเธเธเนเธฒเธง {weights['news'] * 100:.0f}%)")
+        guide.append(f"ข่าว: {news_state} — {news_note} "
+                     f"(น้ำหนักข่าว {weights['news'] * 100:.0f}%)")
     else:
-        guide.append(f"โ  เนเธกเนเธกเธตเธเนเธฒเธงเนเธซเธกเน ({news_note}) โ€” เธฃเธญเธเธเธตเนเธ•เธฑเธ”เธชเธดเธเธเธฒเธเน€เธ—เธเธเธดเธ {_vc} เธ•เธฑเธงเธเธตเน CALL / "
-                     f"{_vp} เธ•เธฑเธงเธเธตเน PUT เนเธฅเธฐเธเธฅเธเธเธฐเธเธฃเธดเธเธขเนเธญเธเธซเธฅเธฑเธ 6โ€“12 เน€เธ”เธทเธญเธ "
-                     f"เนเธ”เธขเธขเธเธเนเธณเธซเธเธฑเธเธเนเธฒเธงเนเธเนเธซเนเธเธฃเธฐเนเธชเน€เธเธดเธเนเธฅเธฐเน€เธ—เธเธเธดเธเนเธ—เธ โ€” "
-                     f"เนเธกเนเนเธ”เนเธซเธกเธฒเธขเธเธงเธฒเธกเธงเนเธฒเธ•เธฅเธฒเธ”เน€เธเธตเธขเธ เนเธ•เนเธซเธกเธฒเธขเธเธงเธฒเธกเธงเนเธฒเน€เธฃเธฒเนเธกเนเธฃเธนเนเธงเนเธฒเธกเธตเธญเธฐเนเธฃเน€เธเธดเธ”เธเธถเนเธ")
-    guide.append(f"เธซเธธเนเธ {sym} เธฃเธฒเธเธฒ ${spot:.2f} ยท เนเธเธงเนเธเนเธก {trend} ยท เนเธกเน€เธกเธเธ•เธฑเธก 21 เธงเธฑเธ {d_info.get('mom21')}% "
+        guide.append(f"⚠ ไม่มีข่าวใหม่ ({news_note}) — รอบนี้ตัดสินจากเทคนิค {_vc} ตัวชี้ CALL / "
+                     f"{_vp} ตัวชี้ PUT และผลชนะจริงย้อนหลัง 6–12 เดือน "
+                     f"โดยยกน้ำหนักข่าวไปให้กระแสเงินและเทคนิคแทน — "
+                     f"ไม่ได้หมายความว่าตลาดเงียบ แต่หมายความว่าเราไม่รู้ว่ามีอะไรเกิดขึ้น")
+    guide.append(f"หุ้น {sym} ราคา ${spot:.2f} · แนวโน้ม {trend} · โมเมนตัม 21 วัน {d_info.get('mom21')}% "
                  f"ยท RSI {d_info.get('rsi')} ยท ADX {d_info.get('adx')}")
-    guide.append(f"เธเธงเธฒเธกเธเธฑเธเธเธงเธ: IV {atm_iv*100:.0f}% (เธญเธฑเธเธ”เธฑเธ {ivr:.0f}/100 = {base['regime']['iv_tag']}) "
-                 f"ยท เธเนเธฒเธเธงเธฒเธกเธเธฑเธเธเธงเธเธเธฃเธดเธ 6 เน€เธ”เธทเธญเธ {sigma_hist*100:.0f}% ยท เธชเนเธงเธเธ•เนเธฒเธ {vrp:+.1f} เธเธธเธ”")
+    guide.append(f"ความผันผวน: IV {atm_iv*100:.0f}% (อันดับ {ivr:.0f}/100 = {base['regime']['iv_tag']}) "
+                 f"· ค่าความผันผวนจริง 6 เดือน {sigma_hist*100:.0f}% · ส่วนต่าง {vrp:+.1f} จุด")
     if base["hist"].get("avg_abs_move") is not None:
-        guide.append(f"เธ•เธฅเธฒเธ”เธเธฒเธ”เธเธฒเธฃเนเธเธงเนเธ ยฑ{em:.2f} (${spot-em:.2f} โ€“ ${spot+em:.2f}) เธ เธฒเธขเนเธ {dte} เธงเธฑเธ ยท "
-                     f"เธชเธ–เธดเธ•เธด 6 เน€เธ”เธทเธญเธเธเนเธฒเน€เธเธฅเธตเนเธขเนเธเธงเนเธ {base['hist']['avg_abs_move']}% เธ•เนเธญ {n_days} เธงเธฑเธเธ—เธณเธเธฒเธฃ "
-                     f"ยท เนเธ 6 เน€เธ”เธทเธญเธเธซเธธเนเธเธ•เธฑเธงเธเธตเนเธเธดเธ”เธเธงเธเนเธเธฃเธญเธ {n_days} เธงเธฑเธเธ—เธณเธเธฒเธฃ {base['hist'].get('up_rate')}% เธเธญเธเธฃเธญเธ")
+        guide.append(f"ตลาดคาดการแกว่ง ±{em:.2f} (${spot-em:.2f} – ${spot+em:.2f}) ภายใน {dte} วัน · "
+                     f"สถิติ 6 เดือนค่าเฉลี่ยแกว่ง {base['hist']['avg_abs_move']}% ต่อ {n_days} วันทำการ "
+                     f"· ใน 6 เดือนหุ้นตัวนี้ปิดบวกในรอบ {n_days} วันทำการ {base['hist'].get('up_rate')}% ของรอบ")
     else:
-        guide.append(f"เธ•เธฅเธฒเธ”เธเธฒเธ”เธเธฒเธฃเนเธเธงเนเธ ยฑ{em:.2f} (${spot-em:.2f} โ€“ ${spot+em:.2f}) เธ เธฒเธขเนเธ {dte} เธงเธฑเธ ยท "
-                     f"โ  เธ”เธถเธเธฃเธฒเธเธฒเธขเนเธญเธเธซเธฅเธฑเธเนเธกเนเธชเธณเน€เธฃเนเธเนเธเธฃเธญเธเธเธตเน เธเธถเธเธขเธฑเธเนเธกเนเธกเธตเธชเธ–เธดเธ•เธด 6 เน€เธ”เธทเธญเธ "
-                     f"(เธ•เธฑเธงเน€เธฅเธเนเธญเธเธฒเธชเธเธเธฐเธขเธฑเธเนเธเนเนเธ”เน เนเธ•เนเนเธกเนเธกเธตเธเธฒเธฃเธขเธทเธเธขเธฑเธเธ”เนเธงเธขเธชเธ–เธดเธ•เธดเธเธฃเธดเธ)")
+        guide.append(f"ตลาดคาดการแกว่ง ±{em:.2f} (${spot-em:.2f} – ${spot+em:.2f}) ภายใน {dte} วัน · "
+                     f"⚠ ดึงราคาย้อนหลังไม่สำเร็จในรอบนี้ จึงยังไม่มีสถิติ 6 เดือน "
+                     f"(ตัวเลขโอกาสชนะยังใช้ได้ แต่ไม่มีการยืนยันด้วยสถิติจริง)")
     if primary:
-        guide.append(f"เธ”เธตเธฅเธ—เธตเนเธเธธเนเธกเธเนเธฒเธ—เธตเนเธชเธธเธ” (เนเธฅเธฐเธ•เธฃเธเธเธฑเธเธ—เธดเธจเธ—เธฒเธเธ—เธตเนเนเธกเน€เธ”เธฅเน€เธซเนเธ): {bias} โ€” {primary['headline']} ยท "
-                     f"EV {primary['ev']:+.2f}$ ({_pct_txt(primary.get('ev_pct'))} เธเธญเธเธเธฃเธตเน€เธกเธตเธขเธก) ยท "
-                     f"เธเธงเธฒเธกเน€เธเธทเนเธญเธกเธฑเนเธเธเนเธญเธกเธนเธฅ {primary['reliability']:.0f}/100")
+        guide.append(f"ดีลที่คุ้มค่าที่สุด (และตรงกับทิศทางที่โมเดลเห็น): {bias} — {primary['headline']} · "
+                     f"EV {primary['ev']:+.2f}$ ({_pct_txt(primary.get('ev_pct'))} ของพรีเมียม) · "
+                     f"ความเชื่อมั่นข้อมูล {primary['reliability']:.0f}/100")
     if top_call and top_put:
-        guide.append(f"เธ–เนเธฒเน€เธญเธฒ โ€เนเธญเธเธฒเธชเธเธเธฐโ€ เน€เธเนเธเธ•เธฑเธงเธ•เธฑเนเธเธญเธขเนเธฒเธเน€เธ”เธตเธขเธง: CALL เธชเธนเธเธชเธธเธ”เธ—เธตเน ${top_call['strike']:g} "
-                     f"({top_call['pop']:.0f}%) ยท PUT เธชเธนเธเธชเธธเธ”เธ—เธตเน ${top_put['strike']:g} ({top_put['pop']:.0f}%) "
-                     f"โ€” เธ”เธนเธฃเธฒเธขเธฅเธฐเน€เธญเธตเธขเธ”เนเธฅเธฐเน€เธซเธ•เธธเธเธฅเนเธ”เนเนเธเธ•เธฒเธฃเธฒเธ Strike เธ”เนเธฒเธเธฅเนเธฒเธ")
+        guide.append(f"ถ้าเอา “โอกาสชนะ” เป็นตัวตั้งอย่างเดียว: CALL สูงสุดที่ ${top_call['strike']:g} "
+                     f"({top_call['pop']:.0f}%) · PUT สูงสุดที่ ${top_put['strike']:g} ({top_put['pop']:.0f}%) "
+                     f"— ดูรายละเอียดและเหตุผลได้ในตาราง Strike ด้านล่าง")
     base["guide"] = guide
 
     # ---- the direct answer: which strike wins, and why ----------------------
     ans = []
     if _fresh < 1:
-        ans.append(f"เธซเธกเธฒเธขเน€เธซเธ•เธธเธชเธณเธเธฑเธ: {news_note} โ€” เธเธณเธ•เธญเธเธ”เนเธฒเธเธฅเนเธฒเธเธเธถเธเธกเธฒเธเธฒเธเน€เธ—เธเธเธดเธ "
-                   f"{_vc} เธ•เธฑเธงเธเธตเน CALL / {_vp} เธ•เธฑเธงเธเธตเน PUT เนเธฅเธฐเธเธฒเธฃเธเธฑเธเธเธฅเธเธฃเธดเธเธขเนเธญเธเธซเธฅเธฑเธ "
-                   f"6โ€“12 เน€เธ”เธทเธญเธ เนเธกเนเนเธ”เนเธกเธฒเธเธฒเธเธเนเธฒเธง")
+        ans.append(f"หมายเหตุสำคัญ: {news_note} — คำตอบด้านล่างจึงมาจากเทคนิค "
+                   f"{_vc} ตัวชี้ CALL / {_vp} ตัวชี้ PUT และการนับผลจริงย้อนหลัง "
+                   f"6–12 เดือน ไม่ได้มาจากข่าว")
     if top_call:
-        ans.append(f"เธ–เนเธฒเธ–เธฒเธกเธงเนเธฒ โ€CALL strike เนเธซเธเนเธญเธเธฒเธชเธเธเธฐเธชเธนเธเธชเธธเธ”โ€ โ’ CALL ${top_call['strike']:g} "
-                   f"(เธซเธกเธ”เธญเธฒเธขเธธ {top_call['expiry']}) เนเธญเธเธฒเธชเธเธเธฐ {top_call['pop']:.0f}% "
-                   f"(เธเนเธงเธ {top_call['pop_lo']:.0f}โ€“{top_call['pop_hi']:.0f}%) เธเธฃเธตเน€เธกเธตเธขเธก ${top_call['premium']} "
-                   f"เธเธธเธ”เธเธธเนเธกเธ—เธธเธ ${top_call['breakeven']} โ€” เน€เธซเธ•เธธเธเธฅ: {top_call['why'][0] if top_call['why'] else ''}")
+        ans.append(f"ถ้าถามว่า “CALL strike ไหนโอกาสชนะสูงสุด” → CALL ${top_call['strike']:g} "
+                   f"(หมดอายุ {top_call['expiry']}) โอกาสชนะ {top_call['pop']:.0f}% "
+                   f"(ช่วง {top_call['pop_lo']:.0f}–{top_call['pop_hi']:.0f}%) พรีเมียม ${top_call['premium']} "
+                   f"จุดคุ้มทุน ${top_call['breakeven']} — เหตุผล: {top_call['why'][0] if top_call['why'] else ''}")
     if top_put:
-        ans.append(f"เธ–เนเธฒเธ–เธฒเธกเธงเนเธฒ โ€PUT strike เนเธซเธเนเธญเธเธฒเธชเธเธเธฐเธชเธนเธเธชเธธเธ”โ€ โ’ PUT ${top_put['strike']:g} "
-                   f"(เธซเธกเธ”เธญเธฒเธขเธธ {top_put['expiry']}) เนเธญเธเธฒเธชเธเธเธฐ {top_put['pop']:.0f}% "
-                   f"(เธเนเธงเธ {top_put['pop_lo']:.0f}โ€“{top_put['pop_hi']:.0f}%) เธเธฃเธตเน€เธกเธตเธขเธก ${top_put['premium']} "
-                   f"เธเธธเธ”เธเธธเนเธกเธ—เธธเธ ${top_put['breakeven']} โ€” เน€เธซเธ•เธธเธเธฅ: {top_put['why'][0] if top_put['why'] else ''}")
+        ans.append(f"ถ้าถามว่า “PUT strike ไหนโอกาสชนะสูงสุด” → PUT ${top_put['strike']:g} "
+                   f"(หมดอายุ {top_put['expiry']}) โอกาสชนะ {top_put['pop']:.0f}% "
+                   f"(ช่วง {top_put['pop_lo']:.0f}–{top_put['pop_hi']:.0f}%) พรีเมียม ${top_put['premium']} "
+                   f"จุดคุ้มทุน ${top_put['breakeven']} — เหตุผล: {top_put['why'][0] if top_put['why'] else ''}")
     if primary:
-        ans.append(f"เธ–เนเธฒเธ–เธฒเธกเธงเนเธฒ โ€เธชเธฑเธเธเธฒเธ—เธตเนเธเธธเนเธกเธเนเธฒเธ—เธตเนเธชเธธเธ” (เนเธญเธเธฒเธชเธเธเธฐ + เธกเธนเธฅเธเนเธฒ + เธชเธ เธฒเธเธเธฅเนเธญเธ)โ€ โ’ {primary['kind']} "
-                   f"${primary['strike']:g} เนเธญเธเธฒเธชเธเธเธฐ {primary['pop']:.0f}% EV {primary['ev']:+.2f}$ "
-                   f"({_pct_txt(primary.get('ev_pct'))} เธเธญเธเธเธฃเธตเน€เธกเธตเธขเธก)"
-                   + (f" เธชเธ–เธดเธ•เธด 6 เน€เธ”เธทเธญเธเนเธเธเน€เธ”เธตเธขเธงเธเธฑเธเธเธเธฐ {primary['hist_win']:.0f}%"
+        ans.append(f"ถ้าถามว่า “สัญญาที่คุ้มค่าที่สุด (โอกาสชนะ + มูลค่า + สภาพคล่อง)” → {primary['kind']} "
+                   f"${primary['strike']:g} โอกาสชนะ {primary['pop']:.0f}% EV {primary['ev']:+.2f}$ "
+                   f"({_pct_txt(primary.get('ev_pct'))} ของพรีเมียม)"
+                   + (f" สถิติ 6 เดือนแบบเดียวกันชนะ {primary['hist_win']:.0f}%"
                       if primary.get("hist_win") is not None else ""))
     if top_call and top_put:
         win = "CALL" if top_call["pop"] >= top_put["pop"] else "PUT"
-        ans.append(f"เธชเธฃเธธเธเธชเธฑเธเธ”เธฒเธซเนเธเธตเน: เธเธฑเนเธ {win} เนเธซเนเธเธงเธฒเธกเธเนเธฒเธเธฐเน€เธเนเธเธเธเธฐเธชเธนเธเธเธงเนเธฒ "
-                   f"(CALL เธชเธนเธเธชเธธเธ” {top_call['pop']:.0f}% ยท PUT เธชเธนเธเธชเธธเธ” {top_put['pop']:.0f}%) "
-                   f"เนเธ•เนเธเธฐเนเธเธเธเธงเธฒเธกเธเธธเนเธกเธเนเธฒเน€เธเธฅเธตเนเธขเธเธญเธเธ—เธฑเนเธเธชเธญเธเธเธฑเนเธเธ•เนเธญเธเธ”เธน EV เธเธฃเธฐเธเธญเธ โ€” "
-                   + ("เธเธฑเนเธ CALL เธกเธต EV เน€เธเนเธเธเธงเธ" if (top_call["ev_pct"] or 0) > 0 else
-                      "เธ—เธฑเนเธเธชเธญเธเธเธฑเนเธ EV เธขเธฑเธเธ•เธดเธ”เธฅเธ เธเธถเนเธเน€เธเนเธเน€เธฃเธทเนเธญเธเธเธเธ•เธดเธเธญเธเธญเธญเธเธเธฑเธเธเธทเนเธญเน€เธ”เธตเนเธขเธง (long option) "
-                      "เน€เธเธฃเธฒเธฐเธ•เนเธญเธเธเนเธฒเธขเธเนเธฒเธเธงเธฒเธกเธเธฑเธเธเธงเธเธฅเนเธงเธเธซเธเนเธฒ"))
+        ans.append(f"สรุปสัปดาห์นี้: ฝั่ง {win} ให้ความน่าจะเป็นชนะสูงกว่า "
+                   f"(CALL สูงสุด {top_call['pop']:.0f}% · PUT สูงสุด {top_put['pop']:.0f}%) "
+                   f"แต่คะแนนความคุ้มค่าเฉลี่ยของทั้งสองฝั่งต้องดู EV ประกอบ — "
+                   + ("ฝั่ง CALL มี EV เป็นบวก" if (top_call["ev_pct"] or 0) > 0 else
+                      "ทั้งสองฝั่ง EV ยังติดลบ ซึ่งเป็นเรื่องปกติของออปชันซื้อเดี่ยว (long option) "
+                      "เพราะต้องจ่ายค่าความผันผวนล่วงหน้า"))
     base["answer"] = ans
 
     cands = [c for c in (calls + puts) if c["cheap"] and c["liquid"]]
@@ -1561,19 +1561,19 @@ def _ncdf(x: float) -> float:
 
 
 # What each SEC form actually means, so the evidence table is readable instead
-# of repeating "4 โ€” FORM 4".
+# of repeating "4 — FORM 4".
 FORM_TH = {
-    "3": "เนเธเนเธเธเธฒเธฃเธ–เธทเธญเธซเธธเนเธเธเธฃเธฑเนเธเนเธฃเธเธเธญเธเธเธนเนเธเธฃเธดเธซเธฒเธฃ",
-    "4": "เนเธเนเธเธเธฒเธฃเธเธทเนเธญ/เธเธฒเธขเธซเธธเนเธเธเธญเธเธเธนเนเธเธฃเธดเธซเธฒเธฃ (เธเธเธงเธเนเธ)",
-    "5": "เธฃเธฒเธขเธเธฒเธเธเธฒเธฃเธ–เธทเธญเธซเธธเนเธเธเธฃเธฐเธเธณเธเธตเธเธญเธเธเธนเนเธเธฃเธดเธซเธฒเธฃ",
-    "8-K": "เน€เธซเธ•เธธเธเธฒเธฃเธ“เนเธชเธณเธเธฑเธเธ—เธตเนเธ•เนเธญเธเนเธเนเธเธ—เธฑเธเธ—เธต",
-    "10-Q": "เธเธเธเธฒเธฃเน€เธเธดเธเธฃเธฒเธขเนเธ•เธฃเธกเธฒเธช",
-    "10-K": "เธเธเธเธฒเธฃเน€เธเธดเธเธฃเธฒเธขเธเธต",
-    "SC 13D": "เธกเธตเธเธนเนเธ–เธทเธญเธซเธธเนเธเธฃเธฒเธขเนเธซเธเนเน€เธเธดเธ 5% (เน€เธเธดเธเธฃเธธเธ)",
-    "SC 13G": "เธกเธตเธเธนเนเธ–เธทเธญเธซเธธเนเธเธฃเธฒเธขเนเธซเธเนเน€เธเธดเธ 5% (เน€เธเธดเธเธฃเธฑเธ)",
-    "S-1": "เธขเธทเนเธเธเธ”เธ—เธฐเน€เธเธตเธขเธเธซเธธเนเธเนเธซเธกเน",
-    "424B": "เธเธฒเธขเธซเธธเนเธเน€เธเธดเนเธกเธ—เธธเธ",
-    "DEF 14A": "เธซเธเธฑเธเธชเธทเธญเน€เธเธดเธเธเธฃเธฐเธเธธเธกเธเธนเนเธ–เธทเธญเธซเธธเนเธ",
+    "3": "แจ้งการถือหุ้นครั้งแรกของผู้บริหาร",
+    "4": "แจ้งการซื้อ/ขายหุ้นของผู้บริหาร (คนวงใน)",
+    "5": "รายงานการถือหุ้นประจำปีของผู้บริหาร",
+    "8-K": "เหตุการณ์สำคัญที่ต้องแจ้งทันที",
+    "10-Q": "งบการเงินรายไตรมาส",
+    "10-K": "งบการเงินรายปี",
+    "SC 13D": "มีผู้ถือหุ้นรายใหญ่เกิน 5% (เชิงรุก)",
+    "SC 13G": "มีผู้ถือหุ้นรายใหญ่เกิน 5% (เชิงรับ)",
+    "S-1": "ยื่นจดทะเบียนหุ้นใหม่",
+    "424B": "ขายหุ้นเพิ่มทุน",
+    "DEF 14A": "หนังสือเชิญประชุมผู้ถือหุ้น",
 }
 
 
@@ -1593,16 +1593,16 @@ def position_check(sym: str, call_strike=None, put_strike=None,
     """
     sym = re.sub(r"[^A-Z.]", "", (sym or "").upper())[:6]
     if not sym:
-        return dict(error="เนเธชเน ticker เธซเธธเนเธเธชเธซเธฃเธฑเธเธเนเธญเธ เน€เธเนเธ SOFI")
+        return dict(error="ใส่ ticker หุ้นสหรัฐก่อน เช่น SOFI")
 
     ch = data.chain(sym)
     if not ch or not ch.get("rows"):
-        return dict(ticker=sym, error="เธ”เธถเธ chain เธญเธญเธเธเธฑเธเนเธกเนเนเธ”เนเนเธเธเธ“เธฐเธเธตเน เธฅเธญเธเธญเธตเธเธเธฃเธฑเนเธ")
+        return dict(ticker=sym, error="ดึง chain ออปชันไม่ได้ในขณะนี้ ลองอีกครั้ง")
 
     d = data.daily(sym)
     intra = data.intraday(sym)
     spot = float(ch.get("spot") or 0.0)
-    spot_src = "CBOE (เธเนเธญเธกเธนเธฅเธฅเนเธฒเธเนเธฒ)"
+    spot_src = "CBOE (ข้อมูลล่าช้า)"
     # The newest traded price beats the quote on the chain: the chain is
     # cached for two minutes, the tape is not.  A position check is about
     # "right now", so it is scored on the last price that actually traded.
@@ -1613,9 +1613,9 @@ def position_check(sym: str, call_strike=None, put_strike=None,
         spot_src = (live or {}).get("source") or spot_src
     if spot <= 0 and len(d):
         spot = float(d["Close"].iloc[-1])
-        spot_src = "เธฃเธฒเธเธฒเธเธดเธ”เธงเธฑเธเธฅเนเธฒเธชเธธเธ”"
+        spot_src = "ราคาปิดวันล่าสุด"
     if spot <= 0:
-        return dict(ticker=sym, error="เนเธกเนเธเธเธฃเธฒเธเธฒเธฅเนเธฒเธชเธธเธ”เธเธญเธเธซเธธเนเธเธเธตเน")
+        return dict(ticker=sym, error="ไม่พบราคาล่าสุดของหุ้นนี้")
 
     spy = cache.wrap("d:SPY", 900, lambda: data.daily("SPY"))
     d_sig, d_info = tech_signal(d, spy)
@@ -1645,7 +1645,7 @@ def position_check(sym: str, call_strike=None, put_strike=None,
         if dte >= 0:
             exps.add((dte, r["expiry"]))
     if not exps:
-        return dict(ticker=sym, error="เนเธกเนเธกเธตเธงเธฑเธเธซเธกเธ”เธญเธฒเธขเธธเธ—เธตเนเธขเธฑเธเนเธกเนเธเนเธฒเธเนเธ chain เธเธตเน")
+        return dict(ticker=sym, error="ไม่มีวันหมดอายุที่ยังไม่ผ่านใน chain นี้")
     exps = sorted(exps)
     dte, exp = exps[0]
 
@@ -1677,12 +1677,12 @@ def position_check(sym: str, call_strike=None, put_strike=None,
         try:
             want = float(strike_in)
         except (TypeError, ValueError):
-            return dict(side=kind, error="strike เธ—เธตเนเธเธฃเธญเธเนเธกเนเนเธเนเธ•เธฑเธงเน€เธฅเธ")
+            return dict(side=kind, error="strike ที่กรอกไม่ใช่ตัวเลข")
 
         rows = [r for r in ch["rows"] if r["expiry"] == exp and r["kind"] == kind]
         if not rows:
             return dict(side=kind, strike=want,
-                        error="เนเธกเนเธเธเธชเธฑเธเธเธฒ %s เนเธเธงเธฑเธเธซเธกเธ”เธญเธฒเธขเธธเธเธตเน" % kind)
+                        error="ไม่พบสัญญา %s ในวันหมดอายุนี้" % kind)
         exact = [r for r in rows if abs(r["strike"] - want) < 1e-9]
         r = exact[0] if exact else min(rows, key=lambda x: abs(x["strike"] - want))
         strike = float(r["strike"])
@@ -1717,37 +1717,37 @@ def position_check(sym: str, call_strike=None, put_strike=None,
         aligned = same >= 5 and same > against
 
         if itm and p >= 0.5:
-            verdict = "เนเธ”เนเน€เธเธฃเธตเธขเธ"
+            verdict = "ได้เปรียบ"
         elif p >= 0.62:
-            verdict = "เธกเธตเนเธญเธเธฒเธช"
+            verdict = "มีโอกาส"
         elif p >= 0.45:
-            verdict = "เธเธญเธกเธตเนเธญเธเธฒเธช"
+            verdict = "พอมีโอกาส"
         elif p >= 0.32:
-            verdict = "เน€เธชเธตเนเธขเธงเน€เธ”เธตเธขเธง"
+            verdict = "เสี้ยวเดียว"
         elif aligned:
             # The direction is right, the distance is the problem.  Saying
-            # "เนเธกเนเธเนเธฒ" here would contradict the trend table right above it.
-            verdict = "เธ—เธดเธจเธ–เธนเธ เนเธ•เนเนเธเธฅเน€เธเธดเธเธงเธฑเธเธเธตเน"
+            # "ไม่น่า" here would contradict the trend table right above it.
+            verdict = "ทิศถูก แต่ไกลเกินวันนี้"
         else:
-            verdict = "เนเธกเนเธเนเธฒ"
+            verdict = "ไม่น่า"
 
-        reasons = ["เน€เธ—เธเธเธดเธ %d เธเธฒเธ %d เธ•เธฑเธงเธเธตเนเธ—เธฒเธ %s ยท %d เธ•เธฑเธงเธเธตเนเธชเธงเธเธ—เธฒเธ"
+        reasons = ["เทคนิค %d จาก %d ตัวชี้ทาง %s · %d ตัวชี้สวนทาง"
                    % (same, len(votes), kind, against)]
         if itm:
-            reasons.append("เธฃเธฒเธเธฒเธญเธขเธนเนเธเธฑเนเธเธ—เธตเนเนเธ”เนเน€เธเธฃเธตเธขเธ (ITM) เนเธฅเนเธง โ€” เน€เธซเธเธทเธญ strike %.1f%%"
+            reasons.append("ราคาอยู่ฝั่งที่ได้เปรียบ (ITM) แล้ว — เหนือ strike %.1f%%"
                            % need_strike if kind == "CALL" else
-                           "เธฃเธฒเธเธฒเธญเธขเธนเนเธเธฑเนเธเธ—เธตเนเนเธ”เนเน€เธเธฃเธตเธขเธ (ITM) เนเธฅเนเธง โ€” เนเธ•เน strike %.1f%%" % need_strike)
+                           "ราคาอยู่ฝั่งที่ได้เปรียบ (ITM) แล้ว — ใต้ strike %.1f%%" % need_strike)
         else:
-            reasons.append("เธ•เนเธญเธเธเธขเธฑเธเธญเธตเธ %.1f%% เธ–เธถเธ strike $%g" % (need_strike, strike))
-        reasons.append("เธเธธเธ”เธเธธเนเธกเธ—เธธเธ $%.2f (เธ•เนเธญเธเธเธขเธฑเธเธญเธตเธ %.1f%%)" % (be, need_be))
+            reasons.append("ต้องขยับอีก %.1f%% ถึง strike $%g" % (need_strike, strike))
+        reasons.append("จุดคุ้มทุน $%.2f (ต้องขยับอีก %.1f%%)" % (be, need_be))
         if prem > 0 and mid > 0:
-            reasons.append("เธฃเธฒเธเธฒเธชเธฑเธเธเธฒเธ•เธญเธเธเธตเน $%.2f เน€เธ—เธตเธขเธเธ—เธตเนเธเนเธฒเธข $%.2f = %s%.0f%%"
+            reasons.append("ราคาสัญญาตอนนี้ $%.2f เทียบที่จ่าย $%.2f = %s%.0f%%"
                            % (mid, prem, "+" if pnl >= 0 else "", pnl_pct or 0.0))
         if dte <= 1:
-            reasons.append("เธซเธกเธ”เธญเธฒเธขเธธเธงเธฑเธเธเธตเน/เธเธฃเธธเนเธเธเธตเน โ€” เธ•เนเธญเธเธเธดเธ”เธเธฑเนเธเธ—เธตเนเธ–เธนเธเธเนเธญเธเธ•เธฅเธฒเธ”เธเธดเธ” เนเธกเนเธเธฑเนเธเธซเธกเธ”เธเนเธฒ")
+            reasons.append("หมดอายุวันนี้/พรุ่งนี้ — ต้องปิดฝั่งที่ถูกก่อนตลาดปิด ไม่งั้นหมดค่า")
         if aligned and p < 0.45:
-            reasons.append("เธ—เธดเธจเธ—เธฒเธเน€เธเนเธฒเธเนเธฒเธเธเธฒเธเธตเน เนเธ•เนเธ•เนเธญเธเธงเธดเนเธ %.1f%% เธ เธฒเธขเนเธเธงเธฑเธเน€เธ”เธตเธขเธง โ€” "
-                           "เธ—เธดเธจเธ–เธนเธเธญเธขเนเธฒเธเน€เธ”เธตเธขเธงเธขเธฑเธเนเธกเนเธเธญ" % need_strike)
+            reasons.append("ทิศทางเข้าข้างขานี้ แต่ต้องวิ่ง %.1f%% ภายในวันเดียว — "
+                           "ทิศถูกอย่างเดียวยังไม่พอ" % need_strike)
 
         hist = None
         try:
@@ -1782,10 +1782,10 @@ def position_check(sym: str, call_strike=None, put_strike=None,
     legs = [x for x in (build("CALL", call_strike, call_prem),
                         build("PUT", put_strike, put_prem)) if x]
     if not legs:
-        return dict(ticker=sym, error="เธเธฃเธญเธ strike เธญเธขเนเธฒเธเธเนเธญเธขเธซเธเธถเนเธเธเธฒ (CALL เธซเธฃเธทเธญ PUT)")
+        return dict(ticker=sym, error="กรอก strike อย่างน้อยหนึ่งขา (CALL หรือ PUT)")
 
     # ---- the evidence behind the direction ---------------------------------
-    # "เธเนเธฒเธงเธฅเธฑเธ" does not exist for us and would be illegal to trade on.  What
+    # "ข่าวลับ" does not exist for us and would be illegal to trade on.  What
     # does exist is the paper trail insiders and large holders are *required*
     # to file: Form 4 (officer/director trades), 8-K (material events),
     # 13D/G (5%+ stakes), plus unusual option prints.  That is the closest
@@ -1830,50 +1830,50 @@ def position_check(sym: str, call_strike=None, put_strike=None,
         agree = [v["name"] for v in votes if v["dir"] == side]
         against = [v["name"] for v in votes if v["dir"] in ("CALL", "PUT") and v["dir"] != side]
         if agree:
-            out.append("เน€เธ—เธเธเธดเธเธซเธเธธเธ %d เธ•เธฑเธง: %s" % (len(agree), ", ".join(agree)))
+            out.append("เทคนิคหนุน %d ตัว: %s" % (len(agree), ", ".join(agree)))
         if against:
-            out.append("เน€เธ—เธเธเธดเธเธเนเธฒเธ %d เธ•เธฑเธง: %s" % (len(against), ", ".join(against)))
+            out.append("เทคนิคค้าน %d ตัว: %s" % (len(against), ", ".join(against)))
 
         if side == "CALL":
             if npv is not None and npv > 0.03:
-                out.append("เน€เธเธดเธเธเธฃเธตเน€เธกเธตเธขเธกเธญเธญเธเธเธฑเธเนเธซเธฅเธเธฑเนเธ CALL (net %+.2f)" % npv)
+                out.append("เงินพรีเมียมออปชันไหลฝั่ง CALL (net %+.2f)" % npv)
             elif npv is not None and npv < -0.03:
-                out.append("เน€เธเธดเธเธเธฃเธตเน€เธกเธตเธขเธกเนเธซเธฅเธเธฑเนเธ PUT (net %+.2f) โ€” เธชเธงเธเธ—เธฒเธเธเธฑเธ CALL" % npv)
+                out.append("เงินพรีเมียมไหลฝั่ง PUT (net %+.2f) — สวนทางกับ CALL" % npv)
             if pcv is not None and pcv < 0.85:
-                out.append("Put/Call %.2f โ€” เธกเธตเธเธเธเธทเนเธญ CALL เธกเธฒเธเธเธงเนเธฒเธเธเธ•เธด" % pcv)
+                out.append("Put/Call %.2f — มีคนซื้อ CALL มากกว่าปกติ" % pcv)
             elif pcv is not None and pcv > 1.2:
-                out.append("Put/Call %.2f โ€” เธ•เธฅเธฒเธ”เน€เธญเธเนเธ PUT" % pcv)
+                out.append("Put/Call %.2f — ตลาดเอนไป PUT" % pcv)
         else:
             if npv is not None and npv < -0.03:
-                out.append("เน€เธเธดเธเธเธฃเธตเน€เธกเธตเธขเธกเธญเธญเธเธเธฑเธเนเธซเธฅเธเธฑเนเธ PUT (net %+.2f)" % npv)
+                out.append("เงินพรีเมียมออปชันไหลฝั่ง PUT (net %+.2f)" % npv)
             elif npv is not None and npv > 0.03:
-                out.append("เน€เธเธดเธเธเธฃเธตเน€เธกเธตเธขเธกเนเธซเธฅเธเธฑเนเธ CALL (net %+.2f) โ€” เธชเธงเธเธ—เธฒเธเธเธฑเธ PUT" % npv)
+                out.append("เงินพรีเมียมไหลฝั่ง CALL (net %+.2f) — สวนทางกับ PUT" % npv)
             if pcv is not None and pcv > 1.2:
-                out.append("Put/Call %.2f โ€” เธกเธตเธเธเธเธทเนเธญ PUT เธกเธฒเธเธเธงเนเธฒเธเธเธ•เธด" % pcv)
+                out.append("Put/Call %.2f — มีคนซื้อ PUT มากกว่าปกติ" % pcv)
             elif pcv is not None and pcv < 0.85:
-                out.append("Put/Call %.2f โ€” เธ•เธฅเธฒเธ”เน€เธญเธเนเธ CALL" % pcv)
+                out.append("Put/Call %.2f — ตลาดเอนไป CALL" % pcv)
 
         if unusual:
             hot = ", ".join("%s $%g (vol %s / OI %s)"
                             % (h["kind"], h["strike"], int(h["volume"]), int(h["oi"]))
                             for h in unusual[:2])
-            out.append("เธเธฃเธดเธกเธฒเธ“เธญเธญเธเธเธฑเธเธเธดเธ”เธเธเธ•เธดเธ—เธตเนเน€เธซเนเธ: " + hot)
+            out.append("ปริมาณออปชันผิดปกติที่เห็น: " + hot)
         if insider:
             f = insider[0]
-            out.append("เธเธนเนเธเธฃเธดเธซเธฒเธฃ/เธเธเธงเธเนเธเธขเธทเนเธ Form %s เธงเธฑเธเธ—เธตเน %s โ€” %s"
+            out.append("ผู้บริหาร/คนวงในยื่น Form %s วันที่ %s — %s"
                        % (f["form"], f["date"],
-                          FORM_TH.get(str(f.get("form")), "เน€เธญเธเธชเธฒเธฃเธชเธฒเธเธฒเธฃเธ“เธฐ")))
+                          FORM_TH.get(str(f.get("form")), "เอกสารสาธารณะ")))
         if material:
             forms = ", ".join(sorted({str(f["form"]) for f in material[:3]}))
-            out.append("เน€เธญเธเธชเธฒเธฃเธชเธณเธเธฑเธเธ•เนเธญ เธ.เธฅ.เธ•. เธชเธซเธฃเธฑเธ: %s (เธฅเนเธฒเธชเธธเธ” %s)" % (forms, material[0]["date"]))
+            out.append("เอกสารสำคัญต่อ ก.ล.ต. สหรัฐ: %s (ล่าสุด %s)" % (forms, material[0]["date"]))
         if fresh and ns_items:
             top = ns_items[0]
-            out.append("เธเนเธฒเธงเนเธซเธกเน %d เธเธดเนเธ ยท เธฅเนเธฒเธชเธธเธ” โ€%sโ€ (%s, เธเนเธณเน€เธชเธตเธขเธ %+.2f)"
-                       % (fresh, (top.get("t") or "")[:90], top.get("s") or "โ€”",
+            out.append("ข่าวใหม่ %d ชิ้น · ล่าสุด “%s” (%s, น้ำเสียง %+.2f)"
+                       % (fresh, (top.get("t") or "")[:90], top.get("s") or "—",
                           float(top.get("c") or 0.0)))
         else:
-            out.append("เนเธกเนเธกเธตเธเนเธฒเธงเนเธซเธกเนเธ—เธตเนเนเธเนเนเธ”เน โ€” เน€เธซเธ•เธธเธเธฅเธเธตเนเธกเธฒเธเธฒเธเน€เธ—เธเธเธดเธ เธเธฃเธฐเนเธชเน€เธเธดเธ "
-                       "เนเธฅเธฐเธชเธ–เธดเธ•เธดเธเธฃเธดเธเธขเนเธญเธเธซเธฅเธฑเธ เนเธกเนเนเธ”เนเธกเธฒเธเธฒเธเธเนเธฒเธง")
+            out.append("ไม่มีข่าวใหม่ที่ใช้ได้ — เหตุผลนี้มาจากเทคนิค กระแสเงิน "
+                       "และสถิติจริงย้อนหลัง ไม่ได้มาจากข่าว")
         return out
 
     why_call = why("CALL")
@@ -1881,16 +1881,16 @@ def position_check(sym: str, call_strike=None, put_strike=None,
 
     badges = []
     if dte == 0:
-        badges.append("เธงเธฑเธเธเธตเนเน€เธเนเธเธงเธฑเธเธซเธกเธ”เธญเธฒเธขเธธ โ€” เธ•เธฑเธงเน€เธฅเธเธเธทเธญเนเธญเธเธฒเธชเธเธดเธ”เธ—เนเธฒเธขเธงเธฑเธเธ—เธตเนเธเธฑเนเธเธเธฑเนเธเธเธเธฐ")
+        badges.append("วันนี้เป็นวันหมดอายุ — ตัวเลขคือโอกาสปิดท้ายวันที่ฝั่งนั้นชนะ")
     elif dte <= 2:
-        badges.append("เน€เธซเธฅเธทเธญเธญเธตเธ %d เธงเธฑเธ โ€” เธเนเธฒเน€เธงเธฅเธฒเธเธฐเธซเธกเธ”เน€เธฃเนเธง เธญเธขเนเธฒเธ–เธทเธญเธเนเธฒเธกเธงเธฑเธเนเธ”เธขเนเธกเนเธกเธตเนเธเธ" % dte)
+        badges.append("เหลืออีก %d วัน — ค่าเวลาจะหมดเร็ว อย่าถือข้ามวันโดยไม่มีแผน" % dte)
     for lg in legs:
         if lg.get("strike_moved"):
-            badges.append("%s $%g เนเธกเนเธกเธตเนเธเธ•เธฅเธฒเธ” เนเธเน strike เนเธเธฅเนเธชเธธเธ” $%g เนเธ—เธ"
+            badges.append("%s $%g ไม่มีในตลาด ใช้ strike ใกล้สุด $%g แทน"
                           % (lg["side"], lg.get("requested", 0), lg.get("strike", 0)))
 
-    trend = "เธเธฒเธเธถเนเธ" if nz(d_info.get("stack"), 0) > 0 else \
-        ("เธเธฒเธฅเธ" if nz(d_info.get("stack"), 0) < 0 else "เนเธเธงเนเธเธญเธญเธเธเนเธฒเธ")
+    trend = "ขาขึ้น" if nz(d_info.get("stack"), 0) > 0 else \
+        ("ขาลง" if nz(d_info.get("stack"), 0) < 0 else "แกว่งออกข้าง")
 
     return dict(
         ticker=sym, spot=round(spot, 2),
@@ -1911,26 +1911,26 @@ def position_check(sym: str, call_strike=None, put_strike=None,
         legs=legs, badges=badges,
         why_call=why_call, why_put=why_put,
         evidence=dict(
-            news_state=ns.get("news_state") or ("เธกเธตเธเนเธฒเธงเนเธซเธกเน" if fresh else "เนเธกเนเธกเธตเธเนเธฒเธง"),
+            news_state=ns.get("news_state") or ("มีข่าวใหม่" if fresh else "ไม่มีข่าว"),
             fresh=fresh, news_total=int(ns.get("n") or 0),
             headlines=[dict(t=(i.get("t") or "")[:110], s=i.get("s"), c=i.get("c"),
                             h=i.get("h"), url=i.get("url")) for i in ns_items[:3]],
             insider=insider_rows,
             material=material_rows,
             unusual=unusual, pc_vol=pcv, net_prem=npv, rvol=c_info.get("rvol")),
-        insider_note=("เธเนเธฒเธงเธฅเธฑเธ/เธเนเธญเธกเธนเธฅเธงเธเนเธ: เน€เธฃเธฒเนเธกเนเธกเธตเนเธฅเธฐเน€เธเนเธฒเธ–เธถเธเนเธกเนเนเธ”เน (เธเธดเธ”เธเธเธซเธกเธฒเธข) โ€” "
-                      "เธชเธดเนเธเธ—เธตเนเธ•เธฃเธงเธเนเธ”เนเธเธทเธญเธฃเนเธญเธเธฃเธญเธขเธชเธฒเธเธฒเธฃเธ“เธฐเธ—เธตเนเธเธเธงเธเนเธเธ•เนเธญเธเธขเธทเนเธเธ•เนเธญ เธ.เธฅ.เธ•. เธชเธซเธฃเธฑเธ "
-                      "เน€เธเนเธ Form 4 (เธเธฒเธฃเธเธทเนเธญเธเธฒเธขเธเธญเธเธเธนเนเธเธฃเธดเธซเธฒเธฃ), 8-K (เน€เธซเธ•เธธเธเธฒเธฃเธ“เนเธชเธณเธเธฑเธ), "
-                      "13D/G (เธเธฒเธฃเธ–เธทเธญเธซเธธเนเธเธ•เธฑเนเธเนเธ•เน 5%) เนเธฅเธฐเธเธฃเธดเธกเธฒเธ“เธญเธญเธเธเธฑเธเธ—เธตเนเธเธดเธ”เธเธเธ•เธด"),
-        answer=("เธ•เธฃเธงเธเธ—เธตเนเธฃเธฒเธเธฒ $%.2f ยท %s ยท เธงเธฑเธเธซเธกเธ”เธญเธฒเธขเธธเธ—เธตเนเนเธเน %s (เธญเธตเธ %d เธงเธฑเธ)"
+        insider_note=("ข่าวลับ/ข้อมูลวงใน: เราไม่มีและเข้าถึงไม่ได้ (ผิดกฎหมาย) — "
+                      "สิ่งที่ตรวจได้คือร่องรอยสาธารณะที่คนวงในต้องยื่นต่อ ก.ล.ต. สหรัฐ "
+                      "เช่น Form 4 (การซื้อขายของผู้บริหาร), 8-K (เหตุการณ์สำคัญ), "
+                      "13D/G (การถือหุ้นตั้งแต่ 5%) และปริมาณออปชันที่ผิดปกติ"),
+        answer=("ตรวจที่ราคา $%.2f · %s · วันหมดอายุที่ใช้ %s (อีก %d วัน)"
                 % (spot, trend, exp, dte)),
         summary=" ยท ".join(
-            "%s $%g: %s (เนเธญเธเธฒเธชเธเธดเธ”เธเธฑเนเธเธเธเธฐ %.0f%%, เธ•เนเธญเธเธงเธดเนเธเธญเธตเธ %.1f%%)"
+            "%s $%g: %s (โอกาสปิดฝั่งชนะ %.0f%%, ต้องวิ่งอีก %.1f%%)"
             % (lg["side"], lg["strike"], lg["verdict"],
                lg.get("p_side_today") or 0, lg.get("need_strike_pct") or 0)
             for lg in legs if not lg.get("error")),
-        note="เนเธญเธเธฒเธชเธเธเธฐเน€เธเนเธเนเธเธเธเธณเธฅเธญเธเธเธฒเธเธเธงเธฒเธกเธเธฑเธเธเธงเธเธเธญเธเธงเธฑเธเธซเธกเธ”เธญเธฒเธขเธธเธเธตเน + เนเธเธงเนเธเนเธก ยท "
-             "เธชเธ–เธดเธ•เธดเธเธฃเธดเธเธเธญเธ strike เน€เธ”เธตเธขเธงเธเธฑเธเนเธชเธ”เธเนเธขเธเนเธงเน ยท เธฃเธฒเธเธฒเธญเธญเธเธเธฑเธเธฅเนเธฒเธเนเธฒเธเธฒเธ CBOE",
+        note="โอกาสชนะเป็นแบบจำลองจากความผันผวนของวันหมดอายุนี้ + แนวโน้ม · "
+             "สถิติจริงของ strike เดียวกันแสดงแยกไว้ · ราคาออปชันล่าช้าจาก CBOE",
     )
 
 
@@ -2169,7 +2169,7 @@ def _scan_once_locked() -> None:
             log.warning("analyze %s failed: %s", s, ex)
             return s, None, f"{s}: {type(ex).__name__}: {str(ex)[:90]}"
         if r is None:
-            return s, None, f"{s}: เนเธกเนเธกเธตเธเนเธญเธกเธนเธฅเธเธญเธชเธณเธซเธฃเธฑเธเธงเธดเน€เธเธฃเธฒเธฐเธซเน"
+            return s, None, f"{s}: ไม่มีข้อมูลพอสำหรับวิเคราะห์"
         if r.get("error"):
             return s, None, f"{s}: {r['error']}"
         return s, r, None
