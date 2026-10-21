@@ -35,14 +35,18 @@ services:
       # without four full analyses holding four option chains in memory at
       # once.
       - key: SCAN_WORKERS
-        value: "3"
+        value: "4"
       - key: ANALYZE_SLOTS
-        value: "3"
+        value: "4"
       # One pool for every network fan-out in the process, with its threads
       # created at boot.  Starting a thread while a pass is running is what
       # used to stall the scan on this instance.
       - key: IO_WORKERS
         value: "16"
+      # A ticker gets room to finish: the providers answer in seconds from a
+      # fast connection and in tens of seconds from here.
+      - key: ANALYZE_TIMEOUT
+        value: "90"
       - key: INLINE_WAIT_SEC
         value: "20"
       # Each real expiry date in the chain gets its own answer.  Four covers the

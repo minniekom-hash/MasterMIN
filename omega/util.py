@@ -347,10 +347,10 @@ def _getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
         hit = _DNS_CACHE.get(key)
         if hit and (time.time() - hit[0]) < DNS_TTL:
             return hit[1]
-    # If no resolver thread is alive -- a container that refused them -- then
-    # queueing the lookup would be pointless.  Do it here instead: the caller
-    # has its own deadline, and a lookup that works is better than one that
-    # never even starts.
+    # If no resolver thread is alive -- a container that refused them, or a
+    # pool that lost them -- then queueing the lookup would be pointless.  Do
+    # it here instead: the caller has its own deadline, and a lookup that
+    # works is better than one that never even starts.
     if not any(t.name.startswith("omega-dns") for t in threading.enumerate()):
         try:
             res = _REAL_GETADDRINFO(host, port, family, type, proto, flags)
@@ -410,22 +410,30 @@ def io_pool():
     """The shared network pool.  Never None, never rebuilt in a request."""
     global _io_pool, _io_live
     with _io_lock:
-        if _io_pool is None:
-            _io_pool = ThreadPoolExecutor(max_workers=IO_WORKERS,
-                                          thread_name_prefix="omega-io")
-            # Force the threads into existence now, one at a time, while the
-            # process is still quiet -- and count how many actually started,
-            # because a container may refuse the rest.
-            live = 0
-            for _i in range(IO_WORKERS):
-                try:
-                    _io_pool.submit(lambda: None)
-                    live += 1
-                except Exception as ex:
-                    THREAD_ERRORS.append("omega-io: %s: %s" % (type(ex).__name__, str(ex)[:120]))
-                    log.warning("network pool: %s", ex)
-                    break
-            _io_live = live
+        if _io_pool is not None:
+            alive = sum(1 for t in list(_io_pool._threads) if t.is_alive())
+            if alive >= max(2, IO_WORKERS // 3):
+                _io_live = alive
+                return _io_pool
+            # Enough of the workers died that the pool can no longer keep up.
+            # A fresh one is cheaper than a scan that never finishes.
+            log.warning("network pool: %d of %d workers alive -- rebuilding", alive, IO_WORKERS)
+            _io_pool = None
+        _io_pool = ThreadPoolExecutor(max_workers=IO_WORKERS,
+                                      thread_name_prefix="omega-io")
+        # Force the threads into existence now, one at a time, while the
+        # process is still quiet -- and count how many actually started,
+        # because a container may refuse the rest.
+        live = 0
+        for _i in range(IO_WORKERS):
+            try:
+                _io_pool.submit(lambda: None)
+                live += 1
+            except Exception as ex:
+                THREAD_ERRORS.append("omega-io: %s: %s" % (type(ex).__name__, str(ex)[:120]))
+                log.warning("network pool: %s", ex)
+                break
+        _io_live = live
         return _io_pool
 
 
