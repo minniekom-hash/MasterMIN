@@ -76,6 +76,23 @@ WEIGHTS = {"A": 0.16, "B": 0.12, "C": 0.16, "D": 0.22, "E": 0.14, "H": 0.20}
 TARGET_DELTA = 0.40
 
 
+_TRACE: dict = {}
+_TRACE_LOCK = threading.Lock()
+
+
+def trace_snapshot() -> dict:
+    """Which stage each ticker is in, and for how long."""
+    now = time.time()
+    with _TRACE_LOCK:
+        return {k: dict(stage=v.get("stage"), secs=round(now - (v.get("t") or now), 1))
+                for k, v in _TRACE.items()}
+
+
+def _trace(sym: str, stage: str) -> None:
+    with _TRACE_LOCK:
+        _TRACE[sym] = dict(stage=stage, t=time.time())
+
+
 def _seed(sym: str) -> int:
     return (abs(hash(sym)) % 100000) + int(time.time() // 900)
 
@@ -1038,13 +1055,17 @@ def analyze(sym: str) -> dict | None:
         # as failed, and the cycle carries on.
         from concurrent.futures import ThreadPoolExecutor, TimeoutError as FTO
 
+        _trace(sym, "queued")
         pool = ThreadPoolExecutor(max_workers=1)
         try:
             fut = pool.submit(_analyze_inner, sym)
             try:
-                return fut.result(timeout=ANALYZE_TIMEOUT)
+                out = fut.result(timeout=ANALYZE_TIMEOUT)
+                _trace(sym, "done")
+                return out
             except FTO:
                 log.warning("analyze %s: exceeded %ss -- abandoning it", sym, ANALYZE_TIMEOUT)
+                _trace(sym, "timeout")
                 return None
         finally:
             pool.shutdown(wait=False)
@@ -1052,6 +1073,7 @@ def analyze(sym: str) -> dict | None:
 
 def _analyze_inner(sym: str) -> dict | None:
     _T0 = time.time()
+    _trace(sym, "fetch")
     # The four slowest steps are independent network fetches, so run them
     # together instead of one after another.  On a free instance this is the
     # difference between a scan that finishes and one that appears to hang.
@@ -1104,6 +1126,7 @@ def _analyze_inner(sym: str) -> dict | None:
             log.info("analyze %s: news failed (%s)", sym, type(ex).__name__)
             ns = {}
         _T["news"] = int((time.time() - _t0) * 1000) - _T["fetch"]
+        _trace(sym, "signals")
     finally:
         # do not block on stragglers: the scan must keep moving even if one
         # worker thread is still stuck on a dead connection
@@ -1256,6 +1279,7 @@ def _analyze_inner(sym: str) -> dict | None:
     _t0 = time.time()
     simset = sim.simulate(spot, T, n_days, sigma_mix, mu, logret, sims=SIMS, seed=_seed(sym) % 2_000_000_000)
     _T["sim"] = int((time.time() - _t0) * 1000)
+    _trace(sym, "history")
     _t0 = time.time()
     dist = sim.hist_distributions(close, high, low, n_days, HIST_WINDOW)
     # The same rolling study over the *whole* downloaded history (up to two
@@ -1264,6 +1288,7 @@ def _analyze_inner(sym: str) -> dict | None:
     # six-month window is kept for the wording and the recent-vs-older split.
     dist_full = sim.hist_distributions_full(close, high, low, n_days, 504)
     _T["hist"] = int((time.time() - _t0) * 1000)
+    _trace(sym, "chain")
     months = 6
     em = quant.expected_move(spot, sigma_mix, T)
 

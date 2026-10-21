@@ -412,6 +412,30 @@ def api_sources():
     return jsonify(clean(news.source_status()))
 
 
+@app.route("/api/threads")
+def api_threads():
+    """Where every thread in the process is right now.
+
+    A scan that stops making progress on a platform we cannot read the logs
+    of is otherwise a mystery.  This dumps the live stack of each thread, so
+    the waiting point is visible instead of guessed at.
+    """
+    import sys
+    import traceback
+
+    names = {t.ident: t.name for t in threading.enumerate()}
+    out = []
+    for tid, frame in sys._current_frames().items():
+        try:
+            stack = "".join(traceback.format_stack(frame)[-8:])
+        except Exception:
+            stack = ""
+        out.append(dict(name=names.get(tid, "?"), stack=stack))
+    return jsonify(threads=out, trace=engine.trace_snapshot(),
+                   progress=dict(engine.STATE.get("progress") or {}),
+                   time=now_iso())
+
+
 @app.route("/api/track")
 def api_track():
     return jsonify(clean(track.scoreboard()))
