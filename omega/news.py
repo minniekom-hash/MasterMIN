@@ -694,7 +694,7 @@ def fact_check(items):
 # --------------------------------------------------------------------------- #
 # main entry
 # --------------------------------------------------------------------------- #
-ENRICH_N = 2
+ENRICH_N = 1
 
 # Aggregator links point at a redirect wrapper, not at the article.  Opening
 # one costs a full connect+read cycle and returns a JavaScript stub with no

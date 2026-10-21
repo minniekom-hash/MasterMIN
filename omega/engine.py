@@ -104,7 +104,7 @@ def _seed(sym: str) -> int:
 # The instance this runs on has a hard memory limit, and a worker that is
 # killed for using too much of it takes the whole page down with it.  The scan
 # therefore stops itself before that point rather than discovering it.
-MEMORY_CEILING_MB = env_float("MEMORY_CEILING_MB", 420.0)
+MEMORY_CEILING_MB = env_float("MEMORY_CEILING_MB", 300.0)
 
 
 def _rss_mb() -> float:
@@ -2236,6 +2236,7 @@ def _scan_once_locked() -> None:
                 del r, slim
                 gc.collect()
                 release_memory()
+                log.info("scan: %s done · resident %.0fMB", sym, _rss_mb())
         # Drop whatever the cache was still holding from earlier passes.  An
         # entry that is never read again is never evicted, so without this the
         # cache -- and with it the resident size -- only ever grew.

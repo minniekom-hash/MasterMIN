@@ -146,6 +146,28 @@ def age_hours(ts) -> float:
 _MISS = object()
 
 
+def _rough_size(v, depth: int = 0) -> int:
+    """A rough size in bytes, good enough to see what is filling the memory."""
+    import sys
+    try:
+        s = sys.getsizeof(v)
+    except Exception:
+        return 0
+    if depth > 3:
+        return s
+    if isinstance(v, dict):
+        for k, x in list(v.items())[:300]:
+            s += _rough_size(k, depth + 1) + _rough_size(x, depth + 1)
+    elif isinstance(v, (list, tuple, set, frozenset)):
+        for x in list(v)[:300]:
+            s += _rough_size(x, depth + 1)
+    else:
+        n = getattr(v, "nbytes", None)
+        if isinstance(n, int):
+            s += n
+    return s
+
+
 class TTLCache:
     # An entry that is never read again is never evicted, so the cache used to
     # grow for as long as the process lived: every option chain, every daily
@@ -207,7 +229,16 @@ class TTLCache:
         with self._lock:
             now = time.time()
             live = sum(1 for ts, ttl, _v in self._data.values() if now - ts < ttl)
-            return {"entries": len(self._data), "live": live}
+            biggest = []
+            total = 0
+            for k, (ts, ttl, v) in self._data.items():
+                sz = _rough_size(v)
+                total += sz
+                biggest.append((sz, k))
+            biggest.sort(reverse=True)
+            return {"entries": len(self._data), "live": live,
+                    "mb": round(total / (1024 * 1024), 1),
+                    "biggest": [(k, round(s / 1024, 1)) for s, k in biggest[:8]]}
 
 
 cache = TTLCache()
@@ -295,8 +326,8 @@ _DNS_QUEUE: "queue.Queue" = queue.Queue(maxsize=64)
 # piled up until starting a new one blocked -- which is what stopped the scan
 # dead.  Now a lookup that hangs costs one resolver thread and nothing else:
 # the callers waiting on it give up and the fallbacks take over.
-DNS_WORKERS = 2
-DNS_TIMEOUT = 4.0
+DNS_WORKERS = 4
+DNS_TIMEOUT = 6.0
 DNS_TTL = 60.0
 _DNS_STARTED = False
 
