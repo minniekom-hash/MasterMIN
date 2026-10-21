@@ -625,12 +625,18 @@ def read_article(url: str):
     try:
         from bs4 import BeautifulSoup
 
-        soup = BeautifulSoup(r.text[:400000], "html.parser")
+        # Only the head of the page is read.  A news page carries tens of
+        # thousands of characters of navigation and scripts around the article,
+        # and parsing all of it costs tens of megabytes of memory per page --
+        # which, with several pages read at once, is what took the instance
+        # past its limit.  The article itself is in the first part.
+        soup = BeautifulSoup(r.text[:120000], "html.parser")
         meta = soup.find("meta", property="og:description") or soup.find("meta", attrs={"name": "description"})
         desc = (meta.get("content") if meta else "") or ""
         body = " ".join(x for x in (p.get_text(" ", strip=True) for p in (soup.find("article") or soup).find_all("p")) if len(x) > 60)
+        del soup
         if len(body) >= 600 and not PAYWALL_RE.search(body[:3000]):
-            return "full", body[:6000], ""
+            return "full", body[:3000], ""
         if desc or body:
             return "summary", (desc or body)[:800], "เนื้อหาเต็มถูกจำกัด (paywall/ล็อกอิน)"
         return "none", "", "ไม่พบเนื้อหาในหน้าเว็บ"
@@ -792,6 +798,14 @@ def for_ticker(sym: str, name: str = "") -> dict:
                 it["c"] = 0.0
             it["mismatch"] = bool(body and abs(hc) > 0.25 and abs(bc) > 0.15 and np.sign(hc) != np.sign(bc))
             it["c"] = round(it["c"], 3)
+
+        # The bodies have done their work: the sentiment above is what they
+        # were for.  Keeping every headline of every ticker at full length is
+        # what filled the memory, so what is kept is a short excerpt.
+        for it in dedup:
+            b = it.get("body") or ""
+            if len(b) > 900:
+                it["body"] = b[:900]
 
         checks = fact_check(dedup)
         depth = {"full": 0, "summary": 0, "headline": 0}
