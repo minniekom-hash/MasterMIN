@@ -1075,16 +1075,21 @@ def analyze(sym: str) -> dict | None:
         # as failed, and the cycle carries on.
         from concurrent.futures import TimeoutError as FTO
 
-        _trace(sym, "queued")
-        fut = _ANALYZE_POOL.submit(_analyze_inner, sym)
-        try:
-            out = fut.result(timeout=ANALYZE_TIMEOUT)
-            _trace(sym, "done")
-            return out
-        except FTO:
-            log.warning("analyze %s: exceeded %ss -- abandoning it", sym, ANALYZE_TIMEOUT)
-            _trace(sym, "timeout")
-            return None
+        _trace(sym, "queued", _T)
+        pool = _analyze_pool()
+        if pool is not None:
+            fut = pool.submit(_analyze_inner, sym)
+            try:
+                out = fut.result(timeout=ANALYZE_TIMEOUT)
+                _trace(sym, "done", _T)
+                return out
+            except FTO:
+                log.warning("analyze %s: exceeded %ss -- abandoning it", sym, ANALYZE_TIMEOUT)
+                _trace(sym, "timeout", _T)
+                return None
+        # No working pool at all: run the analysis here.  It has no timeout
+        # of its own, but every step inside has one.
+        return _analyze_inner(sym)
 
 
 def _analyze_inner(sym: str) -> dict | None:
@@ -2044,13 +2049,38 @@ scan_lock = threading.Lock()
 _ANALYZE_SLOTS = threading.Semaphore(ANALYZE_SLOTS)
 # The analyses run on their own pool, never on the network pool: an analysis
 # waits for the fetches it submitted, so letting both share one pool could
-# deadlock it against itself.  The threads are created at import, while the
-# process is quiet -- starting a thread during a pass is what used to stall
-# the scan on a busy instance.
-_ANALYZE_POOL = ThreadPoolExecutor(max_workers=ANALYZE_SLOTS + 1,
-                                   thread_name_prefix="omega-analyze")
-for _i in range(ANALYZE_SLOTS + 1):
-    _ANALYZE_POOL.submit(lambda: None)
+# deadlock it against itself.  The pool is built lazily, and if its threads
+# are ever gone -- a container that refused them, or a restart that did not
+# bring them back -- it is rebuilt rather than left dead.
+_ANALYZE_POOL = None
+_ANALYZE_POOL_LOCK = threading.Lock()
+
+
+def _analyze_pool():
+    """A working analysis pool, rebuilt if its threads are gone."""
+    global _ANALYZE_POOL
+    with _ANALYZE_POOL_LOCK:
+        if _ANALYZE_POOL is not None:
+            alive = sum(1 for t in getattr(_ANALYZE_POOL, "_threads", []) if t.is_alive())
+            if alive >= 1:
+                return _ANALYZE_POOL
+            log.warning("analyze pool: %d of %d workers alive -- rebuilding", alive,
+                        getattr(_ANALYZE_POOL, "_max_workers", 0))
+            _ANALYZE_POOL = None
+        try:
+            p = ThreadPoolExecutor(max_workers=ANALYZE_SLOTS + 1,
+                                  thread_name_prefix="omega-analyze")
+            for _i in range(ANALYZE_SLOTS + 1):
+                try:
+                    p.submit(lambda: None)
+                except Exception as ex:
+                    log.warning("analyze pool: could not start a worker: %s", ex)
+                    break
+            _ANALYZE_POOL = p
+        except Exception as ex:
+            log.warning("analyze pool: %s", ex)
+            _ANALYZE_POOL = None
+        return _ANALYZE_POOL
 # Timestamp of the last ticker to complete in the running scan.  The scan is
 # network-bound and each fetch already has a deadline, so this should always
 # move; when it stops moving the pass is wedged (a provider that answers nothing
