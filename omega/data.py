@@ -208,7 +208,7 @@ def daily(sym: str, ttl: int = 600) -> pd.DataFrame:
         # time and the first usable answer wins.  Tried one after another, a
         # blocked Yahoo cost ~30s of waiting before the ticker had any history
         # at all -- which on a shared instance was most of a scan cycle.
-        from concurrent.futures import ThreadPoolExecutor
+        from concurrent.futures import ThreadPoolExecutor, wait
 
         alts = {}
         with ThreadPoolExecutor(max_workers=3) as ex:
@@ -216,10 +216,11 @@ def daily(sym: str, ttl: int = 600) -> pd.DataFrame:
                 ("StockAnalysis", lambda: _stockanalysis_hist(sym)),
                 ("CBOE History", lambda: _cboe_hist(sym)),
                 ("Nasdaq History", lambda: _nasdaq_hist(sym)))}
-            for f in futs:
+            done, _ = wait(list(futs.keys()), timeout=12.0)
+            for f in done:
                 name = futs[f]
                 try:
-                    alts[name] = f.result(timeout=12.0)
+                    alts[name] = f.result(timeout=0.5)
                 except Exception as err:
                     log.info("daily %s via %s: %s", sym, name, err)
                     alts[name] = None

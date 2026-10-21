@@ -20,7 +20,7 @@ import re
 import threading
 import time
 import xml.etree.ElementTree as ET
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from urllib import robotparser
 from urllib.parse import urlparse
 
@@ -295,12 +295,15 @@ def general_items():
         # a 512MB free instance.  The HTTP layer already allows 10 concurrent
         # requests, so a modest thread count still saturates the network.
         with ThreadPoolExecutor(max_workers=4) as ex:
-            futs = {ex.submit(fetch_feed, u): (name, u) for name, u in GENERAL_FEEDS}
-            for f in futs:
+            futs = {ex.submit(fetch_feed, url): (name, url) for name, url in GENERAL_FEEDS}
+            # One deadline for the whole group, not one per feed: waiting on the
+            # feeds in turn meant a slow feed was charged its full timeout
+            # again for every feed behind it.
+            done, _ = wait(list(futs.keys()), timeout=12.0)
+            for f in done:
                 name, url = futs[f]
                 try:
-                    # Hard deadline per feed: see ticker_feeds().
-                    items = f.result(timeout=12.0)
+                    items = f.result(timeout=0.5)
                 except Exception:
                     items = None
                 if items is None:
@@ -423,13 +426,14 @@ def ticker_feeds(sym: str):
         # pass cheap; a busy query can return a hundred near-duplicates.
         futs = {ex.submit(fetch_feed, tpl.format(sym=sym), limit=40): name
                 for name, tpl in TICKER_FEEDS}
-        for f in futs:
+        # One deadline for the whole group.  A feed that accepts the connection
+        # and then never answers would otherwise park this worker for good; the
+        # scan would sit at "no progress" and the dashboard would stay empty.
+        done, _ = wait(list(futs.keys()), timeout=12.0)
+        for f in done:
             name = futs[f]
             try:
-                # A feed that accepts the connection and then never answers would
-                # otherwise park this worker for good; the scan would sit at
-                # "no progress" and the dashboard would stay empty.
-                items = f.result(timeout=12.0)
+                items = f.result(timeout=0.5)
             except Exception:
                 items = None
             if items is None:
@@ -758,10 +762,11 @@ def for_ticker(sym: str, name: str = "") -> dict:
         if head:
             with ThreadPoolExecutor(max_workers=min(4, len(head))) as ex:
                 futs = {ex.submit(_read, it): it for it in head}
-                for f in futs:
+                done, _ = wait(list(futs.keys()), timeout=12.0)
+                for f in done:
                     it = futs[f]
                     try:
-                        d, txt, why = f.result(timeout=12.0)
+                        d, txt, why = f.result(timeout=0.5)
                     except Exception:
                         d, txt, why = "none", "", "หมดเวลาอ่านบทความ"
                     it.update(depth=d, body=txt, why=why)

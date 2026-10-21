@@ -11,6 +11,7 @@ import logging
 import math
 import os
 import random
+import socket
 import threading
 import time
 from datetime import datetime, timezone
@@ -241,6 +242,39 @@ breaker = Breaker()
 class Http:
     """Tiny requests wrapper: retries, per-host stats, breaker, connection cap."""
 
+    # A name lookup is the one part of a request that the connect timeout does
+    # not cover: the socket timeout only starts once the address is resolved.
+    # When the resolver is slow -- which happens on a free instance -- that is
+    # enough to wedge an entire scan, because nothing else in the request has
+    # a deadline.  So the lookup gets its own short one, and a host that does
+    # not resolve is remembered for a while instead of being looked up again
+    # for every ticker.
+    _dns: dict = {}
+    _dns_lock = threading.Lock()
+
+    @classmethod
+    def _resolves(cls, host: str) -> bool:
+        with cls._dns_lock:
+            hit = cls._dns.get(host)
+            if hit and (time.time() - hit[0]) < 60:
+                return hit[1]
+        out = []
+
+        def _go():
+            try:
+                socket.getaddrinfo(host, None)
+                out.append(True)
+            except Exception:
+                out.append(False)
+
+        th = threading.Thread(target=_go, daemon=True, name="omega-dns")
+        th.start()
+        th.join(timeout=4.0)
+        ok = bool(out and out[0])
+        with cls._dns_lock:
+            cls._dns[host] = (time.time(), ok)
+        return ok
+
     def __init__(self, max_concurrency: int = 24) -> None:
         # The cap must sit comfortably above the number of threads that can ask
         # for a slot at once (scan workers x per-ticker pool + news pools +
@@ -282,6 +316,14 @@ class Http:
         """Return the requests.Response or None. Never raises."""
         host = url.split("/")[2] if "://" in url else url
         if not breaker.allow(host):
+            return None
+        if not self._resolves(host):
+            # The name did not resolve in time.  Treat it as a failure so the
+            # circuit breaker and the fallbacks take over, instead of waiting
+            # on a resolver that is not answering.
+            breaker.fail(host)
+            log.info("DNS slow for %s -- skipping", host)
+            self._bump(host, False, 0)
             return None
         hdrs = {"User-Agent": SEC_UA if sec else random.choice(BROWSER_UAS),
                 "Accept": "*/*", "Accept-Language": "en-US,en;q=0.9",

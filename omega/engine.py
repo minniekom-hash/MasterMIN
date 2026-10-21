@@ -68,6 +68,10 @@ SCAN_WORKERS = env_int("SCAN_WORKERS", 2)
 # a diag probe).  Keeping this at the scan worker count means extra callers wait
 # instead of stacking another ~25MB of pandas working set on the heap.
 ANALYZE_SLOTS = env_int("ANALYZE_SLOTS", max(1, SCAN_WORKERS))
+# The wall-clock ceiling for one ticker.  Everything inside has its own
+# timeout; this is the backstop for the case where a provider accepts the
+# connection and then never answers.
+ANALYZE_TIMEOUT = env_float("ANALYZE_TIMEOUT", 75.0)
 WEIGHTS = {"A": 0.16, "B": 0.12, "C": 0.16, "D": 0.22, "E": 0.14, "H": 0.20}
 TARGET_DELTA = 0.40
 
@@ -1026,7 +1030,24 @@ def analyze(sym: str) -> dict | None:
     # was what pushed the worker into an OOM kill mid-cycle.  Serialising past
     # ANALYZE_SLOTS keeps the ceiling flat no matter who asks for work.
     with _ANALYZE_SLOTS:
-        return _analyze_inner(sym)
+        # A hard deadline on the whole analysis.  Every individual fetch has its
+        # own timeout, but a name lookup can still hang for minutes on a free
+        # instance -- and one hung analysis holds a slot forever, so the rest
+        # of the watchlist piles up behind it and the scan never finishes.
+        # This bounds the damage: the slot is released, the ticker is reported
+        # as failed, and the cycle carries on.
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError as FTO
+
+        pool = ThreadPoolExecutor(max_workers=1)
+        try:
+            fut = pool.submit(_analyze_inner, sym)
+            try:
+                return fut.result(timeout=ANALYZE_TIMEOUT)
+            except FTO:
+                log.warning("analyze %s: exceeded %ss -- abandoning it", sym, ANALYZE_TIMEOUT)
+                return None
+        finally:
+            pool.shutdown(wait=False)
 
 
 def _analyze_inner(sym: str) -> dict | None:

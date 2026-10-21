@@ -304,7 +304,11 @@ def index():
 
 @app.route("/health")
 def health():
-    return jsonify(ok=True, version=VERSION, updated=STATE.get("updated"),
+    # The commit the platform deployed, so a version on screen can be tied to
+    # the code in the repository that produced it.
+    build = (os.environ.get("RENDER_GIT_COMMIT") or "")[:7]
+    return jsonify(ok=True, version=VERSION, build=build,
+                   updated=STATE.get("updated"),
                    items=len(STATE.get("items", [])), memory=_memory_report(),
                    time=now_iso())
 
