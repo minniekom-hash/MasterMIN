@@ -22,7 +22,7 @@ from urllib3.util.retry import Retry
 
 log = logging.getLogger("omega")
 
-VERSION = "2.1.0"
+VERSION = "2.2.0"
 
 CONTACT = os.environ.get("CONTACT_EMAIL", "omega.research@example.com")
 
