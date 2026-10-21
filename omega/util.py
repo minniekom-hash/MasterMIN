@@ -145,6 +145,13 @@ _MISS = object()
 
 
 class TTLCache:
+    # An entry that is never read again is never evicted, so the cache used to
+    # grow for as long as the process lived: every option chain, every daily
+    # history, every article body, for ever.  On a small instance that is what
+    # eventually killed the worker.  Expired entries are now swept, and the
+    # cache has a ceiling as well.
+    MAX_ENTRIES = 600
+
     def __init__(self) -> None:
         self._data: dict = {}
         self._lock = threading.Lock()
@@ -163,6 +170,27 @@ class TTLCache:
     def set(self, key, val, ttl: float) -> None:
         with self._lock:
             self._data[key] = (time.time(), float(ttl), val)
+            if len(self._data) > self.MAX_ENTRIES:
+                self._sweep_locked()
+
+    def _sweep_locked(self) -> None:
+        """Drop everything that has expired.  Called with the lock held."""
+        now = time.time()
+        dead = [k for k, (ts, ttl, _v) in self._data.items() if now - ts >= ttl]
+        for k in dead:
+            self._data.pop(k, None)
+        # Still over the ceiling: the oldest entries go, expired or not.
+        if len(self._data) > self.MAX_ENTRIES:
+            order = sorted(self._data.items(), key=lambda kv: kv[1][0])
+            for k, _v in order[:len(self._data) - self.MAX_ENTRIES]:
+                self._data.pop(k, None)
+
+    def sweep(self) -> int:
+        """Remove expired entries; returns how many were dropped."""
+        with self._lock:
+            before = len(self._data)
+            self._sweep_locked()
+            return before - len(self._data)
 
     def wrap(self, key, ttl: float, fn):
         val = self.get(key)
@@ -175,7 +203,9 @@ class TTLCache:
 
     def stats(self) -> dict:
         with self._lock:
-            return {"entries": len(self._data)}
+            now = time.time()
+            live = sum(1 for ts, ttl, _v in self._data.values() if now - ts < ttl)
+            return {"entries": len(self._data), "live": live}
 
 
 cache = TTLCache()

@@ -20,6 +20,7 @@ score and a plain-Thai explanation of why that strike is (or is not) worth it.
 from __future__ import annotations
 
 import math
+import os
 import re
 import threading
 import time
@@ -95,6 +96,22 @@ def _trace(sym: str, stage: str) -> None:
 
 def _seed(sym: str) -> int:
     return (abs(hash(sym)) % 100000) + int(time.time() // 900)
+
+
+# The instance this runs on has a hard memory limit, and a worker that is
+# killed for using too much of it takes the whole page down with it.  The scan
+# therefore stops itself before that point rather than discovering it.
+MEMORY_CEILING_MB = env_float("MEMORY_CEILING_MB", 330.0)
+
+
+def _rss_mb() -> float:
+    """The resident size of this process, in megabytes (0 when unknown)."""
+    try:
+        with open("/proc/self/statm", "r") as f:
+            pages = int(f.read().split()[1])
+        return pages * (os.sysconf("SC_PAGE_SIZE") / (1024 * 1024))
+    except Exception:
+        return 0.0
 
 
 _SPY_LOCK = threading.Lock()
@@ -2088,6 +2105,7 @@ def scan_now_blocking() -> bool:
     """
     if not scan_lock.acquire(blocking=False):
         return False
+    _SCAN_STOP.clear()
     _HEARTBEAT["t"] = time.time()
     _HEARTBEAT["done"] = 0
     try:
@@ -2144,6 +2162,17 @@ def _scan_once_locked() -> None:
             if _SCAN_STOP.is_set():
                 log.warning("scan: asked to stop -- abandoning the rest of the pass")
                 break
+            # A pass that is about to be killed for using too much memory is
+            # worse than a pass that stops: the whole worker goes down with it,
+            # the page empties, and the pass starts again from nothing.  So the
+            # pass stops itself before the instance does, keeps what it has,
+            # and the next cycle picks up where this one left off.
+            _rss = _rss_mb()
+            if _rss and _rss > MEMORY_CEILING_MB:
+                log.warning("scan: resident size %.0fMB is over the %.0fMB "
+                            "ceiling -- stopping the pass here", _rss, MEMORY_CEILING_MB)
+                _SCAN_STOP.set()
+                break
             sym, r, err = fut.result()
             _HEARTBEAT["t"] = time.time()
             _HEARTBEAT["done"] = _HEARTBEAT.get("done", 0) + 1
@@ -2179,6 +2208,10 @@ def _scan_once_locked() -> None:
                 del r, slim
                 gc.collect()
                 release_memory()
+        # Drop whatever the cache was still holding from earlier passes.  An
+        # entry that is never read again is never evicted, so without this the
+        # cache -- and with it the resident size -- only ever grew.
+        cache.sweep()
 
     items.sort(key=lambda r: -(r.get("omega") or 0))
     cands.sort(key=lambda c: -(c.get("omega") or 0))

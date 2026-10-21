@@ -319,6 +319,17 @@ def _boot():
         if not _BOOTED:
             _BOOTED = True
             log.info("booting background workers")
+            # Two modules are imported lazily inside request paths: the netrc
+            # reader that requests calls on every request, and the HTML parser
+            # used to read article bodies.  When several threads reach them at
+            # once, the import lock becomes a queue -- and on a one-CPU
+            # instance that queue is long enough to look like a hang.  Doing it
+            # once, here, single-threaded, removes the queue entirely.
+            for _mod in ("netrc", "bs4"):
+                try:
+                    __import__(_mod)
+                except Exception:
+                    pass
         # Every call checks the workers, not just the first one.  A worker that
         # died -- or was never started because the process was already under
         # pressure when it booted -- left the dashboard empty with nothing to
@@ -411,7 +422,6 @@ def api_scan_now():
             log.info("manual scan finished (%d items)", len(STATE.get("items") or []))
         except BaseException as ex:
             log.exception("manual scan failed: %s", ex)
-
     if engine.scan_lock.locked():
         return jsonify(started=False, reason="สแกนรอบก่อนยังไม่เสร็จ",
                        progress=dict(STATE.get("progress") or {}),
