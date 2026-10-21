@@ -406,7 +406,7 @@ def strike_risks(row: dict, ctx: dict) -> list:
 # --------------------------------------------------------------------------- #
 def build_strike(sym: str, row_c: dict, spot: float, kind: str, dte: float, n_days: int,
                  simset: dict, dist: dict, close: np.ndarray, atm_iv: float, sigma_hist: float,
-                 T: float, ctx: dict) -> dict | None:
+                 T: float, ctx: dict, dist_full: dict | None = None) -> dict | None:
     spot = nz(spot)
     strike = nz(row_c.get("strike"))
     atm_iv = float(np.clip(nz(atm_iv, 0.35), 0.03, 4.0))
@@ -428,6 +428,35 @@ def build_strike(sym: str, row_c: dict, spot: float, kind: str, dte: float, n_da
     r = sim.strike_row(simset, spot, strike, kind, premium, T, iv, mu_rn)
     hq = sim.hist_query(dist, kind, strike, spot, premium, n_days, close)
     r.update(hq)
+
+    # ---- the number that is counted, not modelled ---------------------------
+    # The model probabilities above are kept only as a labelled cross-check.
+    # What the page leads with is a count over real prices: for every entry day
+    # in the downloaded history, hold this same contract to the same expiry and
+    # see how it actually finished.  ``outcome`` therefore replaces ``pop`` as
+    # the headline, and carries the sample size and Wilson interval so the
+    # reader can judge for themselves how much to trust it.
+    outcome = sim.hist_outcome(dist_full, kind, strike, spot, premium) if dist_full else None
+    if outcome and outcome.get("hist_win") is not None:
+        r["model_pop"] = r.get("pop")          # keep the estimate, clearly named
+        r["model_pop_lo"] = r.get("pop_lo")
+        r["model_pop_hi"] = r.get("pop_hi")
+        r["model_itm"] = r.get("p_itm")
+        r["model_touch"] = r.get("p_touch")
+        r["pop"] = outcome["hist_win"]         # headline = real, counted outcome
+        r["pop_lo"] = outcome["hist_win_lo"]
+        r["pop_hi"] = outcome["hist_win_hi"]
+        r["pop_source"] = "จริง"               # real history
+        r.update(outcome)
+        # ITM and touch are counts too now: the same historical windows already
+        # say how often the level was reached and how often the option still had
+        # value at expiry, so the page does not need the model for those either.
+        if outcome.get("hist_itm") is not None:
+            r["p_itm"] = outcome["hist_itm"]
+        if outcome.get("hist_touch") is not None:
+            r["p_touch"] = outcome["hist_touch"]
+    else:
+        r["pop_source"] = "แบบจำลอง"            # fell back to the model
 
     spread = (ask - bid) / premium if (bid > 0 and ask > 0) else 1.0
     spread = float(np.clip(nz(spread, 1.0), 0.0, 3.0))
@@ -468,14 +497,26 @@ def build_strike(sym: str, row_c: dict, spot: float, kind: str, dte: float, n_da
         r["ev_pct"] = None
     ev_score = float(np.clip(50 + 60 * math.tanh(cand_ev / 100.0 * 2.5), 0, 100))
     pop_score = r["pop"]
+    # ``hist_edge`` now means "what really happened versus what the model
+    # expected".  Both sides are named explicitly because the headline ``pop``
+    # is itself the historical number; comparing it to itself would be a bug.
     hist_edge = None
-    if r.get("hist_win") is not None and r.get("hist_n", 0) >= 40:
-        hist_edge = r["hist_win"] - r["pop"]
+    if r.get("hist_n", 0) >= 40 and r.get("model_pop") is not None:
+        hist_edge = r["hist_win"] - r["model_pop"]
+        r["hist_edge"] = round(hist_edge, 1)
     edge_score = float(np.clip(50 + (hist_edge or 0) * 2.0, 0, 100))
     dir_score = float(np.clip(50 + 50 * ctx["signal"] * (1 if kind == "CALL" else -1), 0, 100))
     iv_score = float(np.clip(100 - ivr_ctx - max(0.0, ctx.get("vrp", 0)) * 1.5 - min(theta_bleed * 3, 35), 0, 100))
-    omega = (0.35 * pop_score + 0.28 * ev_score + 0.12 * edge_score
-             + 0.12 * liq_score + 0.08 * dir_score + 0.05 * iv_score)
+    # Expectancy is scored off the *counted* payoff (``hist_avg_pnl``) when it
+    # exists, because that is money, not a model output; the modelled EV is the
+    # fallback.  Both are expressed per $1 of premium so they are comparable.
+    real_ev = r.get("hist_avg_pnl")
+    real_ev_pct = (real_ev / premium * 100.0) if (real_ev is not None and premium > 0) else None
+    if real_ev_pct is None:
+        real_ev_pct = cand_ev
+    ev_real_score = float(np.clip(50 + 60 * math.tanh(nz(real_ev_pct, 0.0) / 100.0 * 2.5), 0, 100))
+    omega = (0.34 * pop_score + 0.24 * ev_real_score + 0.14 * ev_score + 0.09 * edge_score
+             + 0.10 * liq_score + 0.06 * dir_score + 0.03 * iv_score)
     ad = abs(float(g["delta"]))
     if ad < 0.15 or ad > 0.85:
         omega *= 0.90          # outside the tradable delta band
@@ -612,7 +653,8 @@ def _horizon_reason(best: dict | None, top: dict | None, kind: str, hz: int,
 
 
 def horizon_view(ch: dict, spot: float, close, high, low, atm_iv: float, sigma_hist: float,
-                 logret, net: float, ivr: float, earnings: bool) -> dict:
+                 logret, net: float, ivr: float, earnings: bool,
+                 dist_full_fn=None) -> dict:
     """Best CALL and PUT for each configured horizon, with reasons.
 
     This answers the question traders actually ask -- "if I want ~3 days, which
@@ -648,10 +690,12 @@ def horizon_view(ch: dict, spot: float, close, high, low, atm_iv: float, sigma_h
         simset = sim.simulate(spot, T, n_days, sigma_mix, mu, logret,
                               sims=max(1200, SIMS // 2), seed=_seed(f"{exp}{hz}") % 2_000_000_000)
         dist = sim.hist_distributions(close, high, low, n_days, HIST_WINDOW)
+        dist_full = (dist_full_fn(close, high, low, n_days, 504) if dist_full_fn
+                     else sim.hist_distributions_full(close, high, low, n_days, 504))
         em = quant.expected_move(spot, sigma_mix, T)
         ctx = dict(signal=net, em_pct=round(em / spot * 100, 2), n_days=n_days, months=6,
                    vrp=0.0, iv_rank=ivr, earnings=earnings, tech={}, flow={}, spot=spot,
-                   sigma_hist=sigma_hist * 100, news_n=0, hist_n=(dist["n"] if dist else 0),
+                   sigma_hist=sigma_hist * 100, news_n=0, hist_n=(dist_full["n"] if dist_full else 0),
                    dte=dte, expiry=exp)
 
         lo, hi = spot * (1 - STRIKE_BAND), spot * (1 + STRIKE_BAND)
@@ -672,7 +716,7 @@ def horizon_view(ch: dict, spot: float, close, high, low, atm_iv: float, sigma_h
                 if not r:
                     continue
                 st = build_strike(f"{hz}d", r, spot, kind, dte, n_days, simset, dist,
-                                  close, atm_iv, sigma_hist, T, ctx)
+                                  close, atm_iv, sigma_hist, T, ctx, dist_full)
                 if st:
                     bucket.append(st)
         _sl_rank(calls, net, ivr)
@@ -695,7 +739,10 @@ def horizon_view(ch: dict, spot: float, close, high, low, atm_iv: float, sigma_h
                 "pop_hi", "p_itm", "p_touch", "ev", "ev_pct", "omega", "verdict", "delta",
                 "hist_win", "hist_n", "hist_edge", "cheap", "liquid", "volume", "oi",
                 "spread_pct", "iv", "iv_vs_atm", "dist_pct", "reliability", "headline",
-                "why", "risks")}
+                "why", "risks", "pop_source", "model_pop", "hist_win_count", "hist_itm",
+                "hist_touch", "hist_avg_pnl", "hist_median_pnl", "hist_best_pnl",
+                "hist_worst_pnl", "hist_profit_factor", "hist_recent_win", "hist_older_win",
+                "hist_recent_n", "p_zero", "avg_win")}
 
         tc = pick_side(calls)
         tp = pick_side(puts)
@@ -890,6 +937,11 @@ def _analyze_inner(sym: str) -> dict | None:
     mu = RF + 0.10 * net
     simset = sim.simulate(spot, T, n_days, sigma_mix, mu, logret, sims=SIMS, seed=_seed(sym) % 2_000_000_000)
     dist = sim.hist_distributions(close, high, low, n_days, HIST_WINDOW)
+    # The same rolling study over the *whole* downloaded history (up to two
+    # years).  This is the source of the headline probability: it is a count of
+    # what actually happened, so a bigger sample is strictly better, while the
+    # six-month window is kept for the wording and the recent-vs-older split.
+    dist_full = sim.hist_distributions_full(close, high, low, n_days, 504)
     months = 6
     em = quant.expected_move(spot, sigma_mix, T)
 
@@ -918,7 +970,7 @@ def _analyze_inner(sym: str) -> dict | None:
             r = by_strike[k].get(kind)
             if not r:
                 continue
-            st = build_strike(sym, r, spot, kind, dte, n_days, simset, dist, close, atm_iv, sigma_hist, T, ctx)
+            st = build_strike(sym, r, spot, kind, dte, n_days, simset, dist, close, atm_iv, sigma_hist, T, ctx, dist_full)
             if st:
                 bucket.append(st)
     calls.sort(key=lambda x: x["strike"])
@@ -1016,7 +1068,7 @@ def _analyze_inner(sym: str) -> dict | None:
     # gets a truthful, self-contained best CALL and best PUT with a reason.
     try:
         base["horizons"] = horizon_view(ch, spot, close, high, low, atm_iv, sigma_hist,
-                                        logret, net, ivr, bool(earn))
+                                        logret, net, ivr, bool(earn), sim.hist_distributions_full)
     except Exception as ex:
         log.info("horizons %s: %s", sym, ex)
         base["horizons"] = {}
@@ -1127,6 +1179,10 @@ _STRIKE_KEEP = (
     "liquidity", "omega", "verdict", "reliability", "hist_edge", "hist_n",
     "hist_win", "expiry", "dte", "pop", "pop_lo", "pop_hi", "ev", "ev_pct",
     "breakeven", "iv", "iv_vs_atm", "iv_tag", "headline", "p_itm", "p_touch",
+    "pop_source", "model_pop", "model_pop_lo", "model_pop_hi", "hist_win_count",
+    "hist_itm", "hist_touch", "hist_avg_pnl", "hist_median_pnl", "hist_best_pnl",
+    "hist_worst_pnl", "hist_profit_factor", "hist_recent_win", "hist_older_win",
+    "hist_recent_n", "p_zero", "avg_win", "fair_value",
 )
 _TICKER_KEEP = (
     "ticker", "name", "spot", "spot_source", "chain_ts", "signal", "bias",
@@ -1177,7 +1233,8 @@ def compact_for_scan(r: dict) -> dict:
     _HZ_STRIKE_KEEP = (
         "kind", "strike", "expiry", "dte", "premium", "breakeven", "pop", "pop_lo",
         "pop_hi", "p_itm", "omega", "verdict", "delta", "hist_win", "hist_edge",
-        "hist_n", "cheap", "liquid", "spread_pct",
+        "hist_n", "cheap", "liquid", "spread_pct", "pop_source", "model_pop",
+        "hist_win_count", "hist_avg_pnl", "hist_recent_win", "hist_older_win",
     )
     hz = {}
     for k, v in (r.get("horizons") or {}).items():

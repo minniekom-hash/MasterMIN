@@ -301,13 +301,13 @@ function renderScan(){
         '<div><b style="font-size:16px">'+esc(r.ticker)+'</b> <span class="dim tiny">'+esc((r.name||'').substr(0,26))+'</span></div>'+
         '<span class="tag '+(b.verdict==='ULTIMATE'?'gold':b.verdict==='HIGH'?'green':b.verdict==='WATCH'?'blue':'red')+'">'+b.verdict+'</span></div>'+
       '<div class="row tiny dim" style="margin-top:3px"><span>ราคา '+money(r.spot)+'</span><span>·</span><span>'+esc(b.kind)+' $'+b.strike+'</span><span>·</span><span>หมดอายุ '+esc(b.expiry||'')+' ('+f2(b.dte,0)+' วัน)</span></div>'+
-      '<div class="big '+pcol(b.pop)+'" style="margin-top:6px">'+f2(b.pop,1)+'% <span class="tiny dim">โอกาสชนะ</span></div>'+
-      '<div class="tiny dim">ช่วงความเชื่อมั่น 95%: '+f2(b.pop_lo,1)+'–'+f2(b.pop_hi,1)+'% · EV '+money(b.ev)+(b.ev_pct==null?'':' ('+f2(b.ev_pct,0)+'%)')+'</div>'+
+      '<div class="big '+pcol(b.pop)+'" style="margin-top:6px">'+f2(b.pop,1)+'% <span class="tiny dim">โอกาสชนะ (นับจริง)</span></div>'+
+      '<div class="tiny dim">กำไรจริง '+(b.hist_win_count==null?'–':b.hist_win_count)+' จาก '+(b.hist_n||0)+' รอบย้อนหลัง · ช่วงความเชื่อมั่น 95% '+f2(b.pop_lo,1)+'–'+f2(b.pop_hi,1)+'%</div>'+
       '<div class="sep"></div>'+
       '<div class="tiny"><span class="dim">พรีเมียม</span> <b class="mono">'+money(b.premium)+'</b> <span class="dim">('+f2(b.premium_pct,2)+'% ของราคา)</span> '+
       (b.cheap?'<span class="tag green">ถูก</span>':'<span class="tag warn">แพง</span>')+' '+
       (b.liquid?'<span class="tag green">คล่อง</span>':'<span class="tag red">คล่องต่ำ</span>')+'</div>'+
-      '<div class="tiny dim">จุดคุ้มทุน '+money(b.breakeven)+' · สถิติ 6 ด. ชนะ '+f2(b.hist_win,0)+'% จาก '+(b.hist_n||0)+' รอบ</div>'+
+      '<div class="tiny dim">จุดคุ้มทุน '+money(b.breakeven)+' · กำไรจริง '+(b.hist_win_count==null?'–':b.hist_win_count)+' จาก '+(b.hist_n||0)+' รอบ'+((b.hist_avg_pnl==null)?'':' · เฉลี่ย '+money(b.hist_avg_pnl))+'</div>'+
       '<div class="why tiny">'+esc((b.why&&b.why[0])||b.headline||'')+'</div>'+
       '<button class="btn mini" onclick="openDetail(\''+r.ticker+'\')">ดูตาราง Strike ทั้งหมด →</button>'+
     '</div>';
@@ -389,10 +389,13 @@ function strikeRows(rows, kind){
       '<td><b class="mono">'+s.strike+'</b> <span class="tiny dim">'+distNote+'</span>'+
         '<div class="tiny dim">คุ้มทุน '+money(s.breakeven)+'</div></td>'+
       '<td class="mono">'+money(s.premium)+'<div class="tiny dim">'+f2(s.premium_pct,2)+'%</div></td>'+
-      '<td>'+bar(s.pop,s.pop_lo,s.pop_hi)+'<div class="tiny dim">'+f2(s.pop_lo,1)+'–'+f2(s.pop_hi,1)+'%</div></td>'+
+      '<td>'+bar(s.pop,s.pop_lo,s.pop_hi)+'<div class="tiny dim">'+f2(s.pop_lo,1)+'–'+f2(s.pop_hi,1)+'%'+
+        (s.pop_source==='จริง'?'':' <span style="color:#e6b34a">(แบบจำลอง)</span>')+'</div></td>'+
       '<td class="mono">'+f2(s.p_itm,0)+'%</td>'+
       '<td class="mono">'+f2(s.p_touch,0)+'%</td>'+
-      '<td class="mono '+(s.hist_win>=s.pop?'up':'dim')+'">'+f2(s.hist_win,0)+'%<div class="tiny dim">n='+(s.hist_n||0)+'</div></td>'+
+      '<td class="mono up">'+(s.hist_win_count==null?'–':s.hist_win_count)+'/'+(s.hist_n||0)+
+        '<div class="tiny dim">'+f2(s.hist_win,0)+'% กำไร</div>'+
+        '<div class="tiny dim">'+((s.hist_avg_pnl==null)?'–':money(s.hist_avg_pnl))+' เฉลี่ย</div></td>'+
       '<td class="mono tiny">'+(s.volume||0).toLocaleString()+' / '+(s.oi||0).toLocaleString()+'<div class="tiny dim">sp '+f2(s.spread_pct,1)+'%</div></td>'+
       '<td class="mono tiny">'+f2(s.iv,0)+'%<div class="tiny dim">'+sgn(s.iv_vs_atm)+'</div></td>'+
       '<td class="mono tiny">'+f2(s.delta,2)+'</td>'+
@@ -412,20 +415,31 @@ function whyBlock(s){
     '<div class="gold" style="font-weight:600">'+esc(s.headline||'')+'</div>'+
     '<div class="why"><b>ทำไม strike นี้:</b><ul class="clean">'+w+'</ul></div>'+
     (rk?'<div class="risk"><b>ความเสี่ยง:</b><ul class="clean">'+rk+'</ul></div>':'')+
-    '<div class="grid g4 tiny" style="margin-top:8px">'+
-      '<div class="card kpi"><span class="k">Lognormal (IV ตลาด)</span><span class="v mono">'+f2(s.p_market,1)+'%</span></div>'+
-      '<div class="card kpi"><span class="k">Bootstrap ราคาจริง</span><span class="v mono">'+f2(s.p_boot,1)+'%</span><span class="tiny dim">'+f2(s.p_boot_lo,0)+'–'+f2(s.p_boot_hi,0)+'%</span></div>'+
-      '<div class="card kpi"><span class="k">Fat-tail (t)</span><span class="v mono">'+f2(s.p_fat,1)+'%</span></div>'+
-      '<div class="card kpi"><span class="k">Monte-Carlo GBM</span><span class="v mono">'+f2(s.p_mc,1)+'%</span></div>'+
-    '</div>'+
     '<div class="split" style="margin-top:8px">'+
-      '<div class="card tiny"><b class="gold2">สถิติจริง 6 เดือน</b>'+
-        '<div style="margin-top:5px">แตะระดับนี้ระหว่างทาง <b class="mono">'+f2(s.hist_touch,1)+'%</b> · ปิดเลยระดับนี้ <b class="mono">'+f2(s.hist_end,1)+'%</b></div>'+
-        '<div>ซื้อสัญญานี้แล้วกำไรเมื่อหมดอายุ: สถิติ 6 เดือนที่ผ่านมาเทียบเท่า <b class="mono '+(s.hist_win!=null&&s.hist_win>=s.pop?'up':'dim')+'">'+(s.hist_win==null?'–':f2(s.hist_win,1)+'%')+'</b>'+
-        ' (ช่วง '+(s.hist_win_lo==null?'–':f2(s.hist_win_lo,0)+'–'+f2(s.hist_win_hi,0)+'%')+' จาก '+(s.hist_n||0)+' รอบ) · โมเดลให้ '+f2(s.pop,1)+'% (ช่วง '+f2(s.pop_lo,0)+'–'+f2(s.pop_hi,0)+'%)</div>'+
-        '<div>ราคาแกว่งเฉลี่ย '+f2(s.hist_avg_move,1)+'% · 90% ของรอบไม่เกิน '+f2(s.hist_p90_move,1)+'% · แรงสุด '+f2(s.hist_best,1)+'% / แย่สุด '+f2(s.hist_worst,1)+'%</div>'+
+      '<div class="card tiny"><b class="gold2">นับจริงจากประวัติราคา (ตัวเลขหลัก)</b>'+
+        '<div style="margin-top:5px">ใน <b class="mono">'+(s.hist_n||0)+'</b> รอบย้อนหลังที่ทดสอบสูตรนี้ (สัญญาระยะเดียวกัน จุดคุ้มทุนเดียวกัน):</div>'+
+        '<div>กำไรเมื่อหมดอายุ <b class="mono up" style="font-size:15px">'+(s.hist_win_count==null?'–':s.hist_win_count)+' / '+(s.hist_n||0)+' รอบ = '+(s.hist_win==null?'–':f2(s.hist_win,1)+'%')+'</b>'+
+        ' <span class="tiny dim">(ช่วงความเชื่อมั่น 95% '+(s.pop_lo==null?'–':f2(s.pop_lo,0)+'–'+f2(s.pop_hi,0)+'%')+')</span></div>'+
+        '<div>แตะระดับนี้ระหว่างทาง <b class="mono">'+f2(s.hist_touch,1)+'%</b> · มีมูลค่าเหลือ (ITM) ตอนหมดอายุ <b class="mono">'+f2(s.hist_itm,1)+'%</b></div>'+
+        '<div>กำไร/ขาดทุนจริงต่อสัญญา: เฉลี่ย <b class="mono '+((s.hist_avg_pnl||0)>0?'up':'down')+'">'+money(s.hist_avg_pnl)+'</b>'+
+        ' · กลาง '+money(s.hist_median_pnl)+' · ดีสุด '+money(s.hist_best_pnl)+' · แย่สุด '+money(s.hist_worst_pnl)+'</div>'+
+        '<div>กำไรทั้งชุด ÷ ขาดทุนทั้งชุด (profit factor) <b class="mono '+((s.hist_profit_factor||0)>=1?'up':'down')+'">'+(s.hist_profit_factor==null?'–':f2(s.hist_profit_factor,2))+'</b>'+
+        ((s.hist_profit_factor!=null&&s.hist_profit_factor<1)?' <span class="tiny dim">(ต่ำกว่า 1 = สูตรนี้ขาดทุนสุทธิเมื่อถือยาว)</span>':'')+'</div>'+
+        '<div>ครึ่งหลังของข้อมูล (ใหม่สุด) ชนะ '+(s.hist_recent_win==null?'–':f2(s.hist_recent_win,1)+'%')+' จาก '+(s.hist_recent_n||0)+' รอบ · ครึ่งแรกชนะ '+(s.hist_older_win==null?'–':f2(s.hist_older_win,1)+'%')+'</div>'+
+      '</div>'+
+      '<div class="card tiny"><b class="gold2">เทียบกับแบบจำลอง (อ้างอิงเท่านั้น ไม่ใช่ตัวตัดสิน)</b>'+
+        '<div style="margin-top:5px">แบบจำลองให้ <b class="mono">'+(s.model_pop==null?'–':f2(s.model_pop,1)+'%')+'</b>'+
+        ' <span class="tiny dim">(ช่วง '+f2(s.model_pop_lo,0)+'–'+f2(s.model_pop_hi,0)+'%)</span></div>'+
+        '<div class="dim">ส่วนต่าง สถิติจริง − แบบจำลอง: <b class="'+((s.hist_edge||0)>0?'up':'down')+'">'+(s.hist_edge==null?'–':sgn(s.hist_edge)+' จุด')+'</b>'+
+        ((s.hist_edge==null)?'':((s.hist_edge>0)?' (ของจริงดีกว่าที่โมเดลคิด)':' (ของจริงแย่กว่าที่โมเดลคิด)'))+'</div>'+
+        '<div class="grid g2 tiny" style="margin-top:6px">'+
+          '<div class="card kpi"><span class="k">Lognormal (IV ตลาด)</span><span class="v mono">'+f2(s.p_market,1)+'%</span></div>'+
+          '<div class="card kpi"><span class="k">Bootstrap ราคาจริง</span><span class="v mono">'+f2(s.p_boot,1)+'%</span><span class="tiny dim">'+f2(s.p_boot_lo,0)+'–'+f2(s.p_boot_hi,0)+'%</span></div>'+
+          '<div class="card kpi"><span class="k">Fat-tail (t)</span><span class="v mono">'+f2(s.p_fat,1)+'%</span></div>'+
+          '<div class="card kpi"><span class="k">Monte-Carlo GBM</span><span class="v mono">'+f2(s.p_mc,1)+'%</span></div>'+
+        '</div>'+
+        '<div style="margin-top:5px">ราคาแกว่งเฉลี่ย '+f2(s.hist_avg_move,1)+'% · 90% ของรอบไม่เกิน '+f2(s.hist_p90_move,1)+'% · แรงสุด '+f2(s.hist_best,1)+'% / แย่สุด '+f2(s.hist_worst,1)+'%</div>'+
         '<div>ปิดเหนือกว่า strike นี้ ' + f2(s.days_above,1)+'% ของวัน · ใต้กว่า '+f2(s.days_below,1)+'%</div>'+
-        '<div class="dim">ส่วนต่างโมเดล vs สถิติจริง: <b class="'+((s.hist_edge||0)>0?'up':'down')+'">'+(s.hist_edge==null?'–':sgn(s.hist_edge)+' จุด')+'</b>'+((s.hist_edge||0)>0?' (สถิติจริงดีกว่าโมเดล)':(s.hist_edge==null?'':' (โมเดลมองบวกกว่าสถิติจริง)'))+'</div>'+
       '</div>'+
       '<div class="card tiny"><b class="gold2">ตัวเลขการซื้อขาย</b>'+
         '<div style="margin-top:5px">Bid/Ask <span class="mono">'+money(s.bid)+' / '+money(s.ask)+'</span> · Spread <span class="mono">'+f2(s.spread_pct,1)+'%</span></div>'+
@@ -447,10 +461,10 @@ function horizonSide(s, cls, label){
       '<b class="'+win+'">'+label+' $'+s.strike+'</b>'+
       '<span class="tag '+(s.verdict==='ULTIMATE'?'gold':s.verdict==='HIGH'?'green':'blue')+'">'+esc(s.verdict)+' '+f2(s.omega,0)+'</span>'+
     '</div>'+
-    '<div class="big '+pcol(s.pop)+'" style="font-size:22px">'+f2(s.pop,1)+'% <span class="tiny dim">โอกาสชนะ</span></div>'+
-    '<div class="tiny dim">ช่วงความเชื่อมั่น 95% '+f2(s.pop_lo,1)+'–'+f2(s.pop_hi,1)+'% · จบ ITM '+f2(s.p_itm,0)+'%</div>'+
+    '<div class="big '+pcol(s.pop)+'" style="font-size:22px">'+f2(s.pop,1)+'% <span class="tiny dim">โอกาสชนะ (นับจริง)</span></div>'+
+    '<div class="tiny dim">ช่วงความเชื่อมั่น 95% '+f2(s.pop_lo,1)+'–'+f2(s.pop_hi,1)+'% · ชนะ '+(s.hist_win_count==null?'–':s.hist_win_count)+' จาก '+(s.hist_n||0)+' รอบจริง</div>'+
     '<div class="tiny" style="margin-top:4px">พรีเมียม <b class="mono">'+money(s.premium)+'</b> · ต้องปิดให้ถึง <b class="mono">'+money(s.breakeven)+'</b></div>'+
-    '<div class="tiny dim">สถิติ 6 เดือนสูตรเดียวกันชนะ '+f2(s.hist_win,0)+'% จาก '+(s.hist_n||0)+' รอบ (ต่างจากโมเดล '+sgn(s.hist_edge)+' จุด)</div>'+
+    '<div class="tiny dim">กำไรเฉลี่ยต่อสัญญา <b class="mono '+((s.hist_avg_pnl||0)>0?'up':'down')+'">'+money(s.hist_avg_pnl)+'</b> · ครึ่งใหม่ชนะ '+(s.hist_recent_win==null?'–':f2(s.hist_recent_win,0)+'%')+' / ครึ่งเก่าชนะ '+(s.hist_older_win==null?'–':f2(s.hist_older_win,0)+'%')+'</div>'+
     (s.cheap?'':'<div class="tiny" style="color:#e6b34a">พรีเมียมยังไม่ถูกตามเกณฑ์</div>')+
   '</div>';
 }
@@ -489,10 +503,10 @@ function renderDetail(r){
     if(!s) return '<div class="pick '+cls+'"><div class="dim">ไม่มีข้อมูล '+label+'</div></div>';
     return '<div class="pick '+cls+'">'+
       '<div class="row" style="justify-content:space-between"><b class="'+cls+'">'+label+' $'+s.strike+'</b><span class="tag '+(s.verdict==='ULTIMATE'?'gold':s.verdict==='HIGH'?'green':'blue')+'">'+s.verdict+' '+f2(s.omega,0)+'</span></div>'+
-      '<div class="big '+pcol(s.pop)+'">'+f2(s.pop,1)+'% <span class="tiny dim">โอกาสชนะ</span></div>'+
-      '<div class="tiny dim">ช่วง 95% '+f2(s.pop_lo,1)+'–'+f2(s.pop_hi,1)+'% · จบ ITM '+f2(s.p_itm,0)+'% · แตะระหว่างทาง '+f2(s.p_touch,0)+'%</div>'+
-      '<div class="tiny" style="margin-top:5px">พรีเมียม <b class="mono">'+money(s.premium)+'</b> · คุ้มทุน <b class="mono">'+money(s.breakeven)+'</b> · EV <span class="mono">'+money(s.ev)+' ('+f2(s.ev_pct,0)+'%)</span></div>'+
-      '<div class="tiny dim">สถิติ 6 เดือนแบบเดียวกันชนะ '+f2(s.hist_win,0)+'% จาก '+s.hist_n+' รอบ · ต่างจากโมเดล '+sgn(s.hist_edge)+' จุด</div>'+
+      '<div class="big '+pcol(s.pop)+'">'+f2(s.pop,1)+'% <span class="tiny dim">โอกาสชนะ (นับจริงจากประวัติ)</span></div>'+
+      '<div class="tiny dim">ในช่วง '+(s.hist_n||0)+' รอบจริง กำไร '+(s.hist_win_count==null?'–':s.hist_win_count)+' รอบ · ช่วงความเชื่อมั่น 95% '+f2(s.pop_lo,1)+'–'+f2(s.pop_hi,1)+'%</div>'+
+      '<div class="tiny" style="margin-top:5px">พรีเมียม <b class="mono">'+money(s.premium)+'</b> · คุ้มทุน <b class="mono">'+money(s.breakeven)+'</b> · EV '+money(s.ev)+' ('+f2(s.ev_pct,0)+'%)</div>'+
+      '<div class="tiny dim">กำไรเฉลี่ยต่อสัญญาจริง <b class="mono '+((s.hist_avg_pnl||0)>0?'up':'down')+'">'+money(s.hist_avg_pnl)+'</b> · profit factor '+(s.hist_profit_factor==null?'–':f2(s.hist_profit_factor,2))+' · ครึ่งใหม่ชนะ '+(s.hist_recent_win==null?'–':f2(s.hist_recent_win,0)+'%')+'</div>'+
       '<div class="why tiny"><ul class="clean">'+(s.why||[]).slice(0,3).map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></div>'+
     '</div>';
   }
@@ -531,7 +545,7 @@ function renderDetail(r){
     '<h3>เลือกตามเวลาที่คุณจะถือ: CALL/PUT strike ไหนโอกาสชนะสูงสุด (3 / 5 / 10 วัน)</h3>'+
     horizonPanel(r)+
     '<div class="tiny dim" style="margin-top:6px">อ่านอย่างไร: แต่ละช่องคือสัญญาที่<b>โอกาสชนะสูงสุด</b>ในช่วงเวลานั้น (ต้องมีพรีเมียมถูกและมีปริมาณจริง) · '+
-    'ตัวเลขโอกาสชนะมาจากการจำลอง 4 วิธีที่ระยะเวลาของช่องนั้นเอง ไม่ได้ยืมค่าจากระยะอื่น · ถ้าโซ่ตัวเลือกไม่มีวันหมดอายุตรงกับที่ขอ ระบบจะใช้ตัวที่ใกล้ที่สุดและกำกับไว้</div>'+
+    'ตัวเลขโอกาสชนะคือ<b>การนับจริง</b>จากประวัติราคาที่ดาวน์โหลดมา ทดสอบสูตรเดียวกัน (strike + จุดคุ้มทุน + ระยะเวลาเดียวกัน) ในทุกวันย้อนหลัง · ถ้าโซ่ตัวเลือกไม่มีวันหมดอายุตรงกับที่ขอ ระบบจะใช้ตัวที่ใกล้ที่สุดและกำกับไว้</div>'+
 
     '<h3>ตลาดคาดว่าจะแกว่งแค่ไหนใน '+f2(r.dte,0)+' วัน</h3>'+
     '<div class="grid g4">'+
@@ -548,13 +562,13 @@ function renderDetail(r){
     '<h3>ตาราง Strike · หมดอายุ '+esc(r.expiry||'')+' (อีก '+f2(r.dte,0)+' วัน)</h3>'+
     '<div class="tabs"><div class="tab on" id="tabC" onclick="switchTab(\'CALL\')">CALL (แทงขึ้น)</div><div class="tab" id="tabP" onclick="switchTab(\'PUT\')">PUT (แทงลง)</div></div>'+
     '<div class="scroll tall"><table id="stk"><thead><tr>'+
-      '<th>Strike / จุดคุ้มทุน</th><th>พรีเมียม</th><th>โอกาสชนะเมื่อเทียบจุดคุ้มทุน (95%)</th><th>จบ ITM</th><th>แตะระดับ Strike</th><th>สถิติ 6 ด. เทียบจุดคุ้มทุน</th>'+
+      '<th>Strike / จุดคุ้มทุน</th><th>พรีเมียม</th><th>โอกาสชนะ (นับจริง · 95%)</th><th>จบ ITM</th><th>แตะระดับ Strike</th><th>กำไรจริงกี่รอบ / เฉลี่ย</th>'+
       '<th>ปริมาณ / OI</th><th>IV</th><th>Δ</th><th>Θ/วัน</th><th>EV</th><th>คะแนน</th><th></th>'+
     '</tr></thead><tbody id="stkBody">'+strikeRows(r.calls,'CALL')+'</tbody></table></div>'+
     '<div class="tiny dim" style="margin-top:5px">วิธีอ่าน (สำคัญ): <b>จุดคุ้มทุน (breakeven)</b> คือราคาที่ต้องไปให้ถึงตอนหมดอายุจึงจะกำไร ไม่ใช่ตัวเลข Strike · '+
-    '<b>โอกาสชนะ</b> = ความน่าจะเป็นที่ปิดเลยจุดคุ้มทุน (เฉลี่ย 4 โมเดล + ช่วงความเชื่อมั่น 95% แบบ Wilson) · '+
-    '<b>จบ ITM</b> = มีมูลค่าเหลือตอนหมดอายุ · <b>แตะระดับ Strike</b> = ราคาไปแตะตัว strike ก่อนหมดอายุ (ไม่เท่ากับกำไร) · '+
-    '<b>สถิติ 6 ด.</b> = ถ้าใน 6 เดือนที่ผ่านมาเข้าซื้อสูตรระยะเดียวกันนี้ จะกำไรกี่เปอร์เซ็นต์ของรอบ</div>'+
+    '<b>โอกาสชนะ</b> = ตัวเลขที่<b>นับจริง</b>จากประวัติราคาที่ดาวน์โหลดมา ทดสอบสูตรเดียวกัน (strike เดียวกัน จุดคุ้มทุนเดียวกัน ระยะเวลาเดียวกัน) ในทุกวันย้อนหลัง แล้วนับว่ากี่รอบที่กำไรจริง — '+
+    'พร้อมช่วงความเชื่อมั่น 95% แบบ Wilson · <b>จบ ITM</b> = มีมูลค่าเหลือตอนหมดอายุ (นับจริง) · <b>แตะระดับ Strike</b> = ราคาไปแตะตัว strike ก่อนหมดอายุ (ไม่เท่ากับกำไร) · '+
+    '<b>กำไรจริงกี่รอบ / เฉลี่ย</b> = จำนวนรอบที่กำไรจริง และกำไร/ขาดทุนเฉลี่ยต่อสัญญาเป็นดอลลาร์</div>'+
 
     '<div class="split" style="margin-top:14px">'+
       '<div class="card"><b class="gold2">อินดิเคเตอร์เทคนิค</b>'+
@@ -600,7 +614,7 @@ function renderDetail(r){
       '<h3>การตรวจสอบข้อเท็จจริงข้ามสำนักข่าว</h3><div class="scroll tall"><table><thead><tr><th>ประเด็น</th><th>ผล</th><th>จำนวนแหล่ง</th><th>รายละเอียด</th></tr></thead><tbody>'+
       r.news_detail.checks.map(c=>'<tr><td style="text-align:left;white-space:normal">'+esc(c.topic)+'</td><td><span class="tag '+(c.verdict==='ยืนยันแล้ว'?'green':c.verdict==='ยืนยันบางส่วน'?'blue':'warn')+'">'+esc(c.verdict)+'</span></td><td class="mono">'+c.n+'</td><td style="text-align:left;white-space:normal" class="tiny">'+esc(c.note)+'</td></tr>').join('')+
       '</tbody></table></div>':'')+
-    '<div class="risk" style="margin-top:14px">พรีเมียมและกรีกส์จาก CBOE เป็นข้อมูลล่าช้า ความน่าจะเป็นเป็นค่าประมาณจากแบบจำลองสี่ตัว ไม่ใช่หลักประกันผลตอบแทน ตรวจสอบราคาจริงก่อนส่งคำสั่ง</div>';
+    '<div class="risk" style="margin-top:14px">ตัวเลข<b>โอกาสชนะ</b>และ<b>กำไร/ขาดทุน</b>ในหน้านี้มาจากการนับจริงบนประวัติราคาที่ดาวน์โหลดมา ไม่ใช่การคาดเดา · ส่วนที่กำกับว่า “แบบจำลอง” เป็นเพียงการอ้างอิงเทียบเคียง · พรีเมียมและกรีกส์จาก CBOE เป็นข้อมูลล่าช้า ตรวจสอบราคาจริงก่อนส่งคำสั่ง</div>';
   window._calls = r.calls||[]; window._puts = r.puts||[];
 }
 function switchTab(kind){

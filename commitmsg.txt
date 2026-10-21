@@ -1,0 +1,34 @@
+Lead with the counted outcome, not the model
+
+The headline probability is now a count over real prices rather than a
+simulation.  For every entry day in the downloaded history the same contract
+(strike, breakeven and horizon held fixed) is settled on that window's real
+exit, and the page reports how many of those windows actually made money.
+
+  * omega/sim.py: add hist_distributions_full(), which rolls the study over the
+    whole two years we download instead of the 126-day window -- the sample goes
+    from ~245 to ~495 windows, so the Wilson interval tightens and no single
+    stretch of the calendar drives the answer.  add hist_outcome(), which counts
+    the exact trade: finished beyond breakeven, finished in the money, touched
+    the level, and the real dollar P&L of every instance.
+
+  * Payoff is computed with the contract's moneyness held fixed, not its dollar
+    strike.  A strike that happens to sit deep in the money today used to look
+    as if it won almost every historical window (profit factor 368).  Scaling by
+    spot/entry makes the result comparable to today's premium and the profit
+    factors are now 0.17-1.05, which is the honest picture for long options.
+
+  * omega/engine.py: pop/pop_lo/pop_hi/p_itm/p_touch now come from the count.
+    The model's numbers are kept and renamed model_pop/model_itm/model_touch so
+    the UI can show them side by side instead of conflating the two.  hist_edge
+    is now history minus model (it previously compared a number to itself).
+    omega is scored on the counted payoff first, with the modelled EV as a
+    fallback.
+
+  * index.html: every surface says whether a number was counted or modelled.
+    Strike rows show wins/total and real average P&L, horizon and pick cards
+    lead with the count, and the "why" block splits into a counted panel and a
+    clearly-labelled model reference.
+
+Verified: 15/15 tickers, 0 errors, cycle 53.9s, and for every pick on the page
+hist_win_count / hist_n reproduces pop exactly.

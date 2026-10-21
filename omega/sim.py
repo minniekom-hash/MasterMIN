@@ -270,3 +270,128 @@ def move_table(dist: dict) -> list:
             finish_down=round(float(np.mean(dist["rel"] <= -x / 100.0) * 100.0), 1),
         ))
     return rows
+
+
+# --------------------------------------------------------------------------- #
+# the count, not the guess: real historical outcomes of the exact trade
+# --------------------------------------------------------------------------- #
+def hist_distributions_full(close, high, low, n_days: int, window: int = 504) -> dict | None:
+    """Rolling n-day outcomes over *every* day of history we have (up to 2 years).
+
+    ``hist_distributions`` is deliberately capped near six months so its numbers
+    are comparable to the "six month" wording the dashboard used.  This variant
+    uses the whole downloaded series, which is what a trader means by "how often
+    has this actually happened" -- more windows, tighter confidence interval, and
+    no dependence on one lucky stretch of the calendar.
+    """
+    close = np.asarray(close, dtype=float)
+    high = np.asarray(high, dtype=float)
+    low = np.asarray(low, dtype=float)
+    n = len(close)
+    n_days = max(int(n_days), 1)
+    if n < n_days + 40:
+        return None
+    start = max(0, n - window)
+    ends = np.arange(start, n - n_days)
+    if len(ends) < 20:
+        return None
+    entries = close[ends]
+    exits = close[ends + n_days]
+    fmax = np.array([high[e + 1: e + n_days + 1].max() for e in ends])
+    fmin = np.array([low[e + 1: e + n_days + 1].min() for e in ends])
+    rel = exits / entries - 1.0
+    up_exc = fmax / entries - 1.0
+    dn_exc = 1.0 - fmin / entries
+    # Split the sample in half so the UI can show whether the edge held up
+    # recently or only in the older part of the record.
+    half = len(rel) // 2
+    return dict(rel=rel, up_exc=up_exc, dn_exc=dn_exc, n=len(rel),
+                entry=entries, exit=exits, fmax=fmax, fmin=fmin,
+                window=n_days, span_days=len(ends),
+                recent=rel[half:], older=rel[:half], split=half)
+
+
+def hist_outcome(dist: dict, kind: str, strike: float, spot: float, premium: float) -> dict | None:
+    """How the *exact* trade would have finished, counted on real prices.
+
+    For every entry day in the window we hold the same contract until expiry and
+    score the real outcome three ways, all of which a trader cares about:
+
+      * finished beyond breakeven  -> the trade made money
+      * finished in the money       -> the option still had value
+      * price touched the strike    -> the level was reached (not the same thing)
+
+    Nothing here is modelled, sampled or assumed: it is a count over realised
+    closes and highs/lows.
+    """
+    if not dist:
+        return None
+    up = kind == "CALL"
+    d_req = strike / spot - 1.0
+    be = strike + premium if up else strike - premium
+    d_be = be / spot - 1.0
+
+    if up:
+        touched = dist["up_exc"] >= d_req
+        end_itm = dist["rel"] >= d_req
+        end_be = dist["rel"] >= d_be
+    else:
+        touched = dist["dn_exc"] >= -d_req
+        end_itm = dist["rel"] <= d_req
+        end_be = dist["rel"] <= d_be
+
+    n = int(len(dist["rel"]))
+    wins = int(np.sum(end_be))
+    lo, hi = quant.wilson(wins, n)
+
+    # Money, counted the same way as the win rate.
+    #
+    # The historical windows start on different days, so the *same* strike sits at
+    # a different distance on each one.  The honest comparison therefore holds the
+    # contract's *moneyness* fixed rather than its dollar strike: for each past
+    # entry we price the option at that entry's own spot, with the strike placed
+    # at the same relative offset it has today, then settle it on that window's
+    # real exit price.  Scaling by ``spot/entry`` converts the result into today's
+    # dollars, which is what the premium is quoted in.
+    #
+    # Without this, a strike that happens to sit deep in the money today looks as
+    # if it won almost every historical window -- a artefact of today's price,
+    # not evidence about the trade.
+    entries = np.asarray(dist["entry"], dtype=float)
+    exits = np.asarray(dist["exit"], dtype=float)
+    rel_strike = strike / spot if spot > 0 else 0.0        # strike as a fraction of spot
+    scale = np.where(entries > 0, spot / entries, 1.0)
+    if up:
+        payoff = np.maximum(exits - entries * rel_strike, 0.0)
+    else:
+        payoff = np.maximum(entries * rel_strike - exits, 0.0)
+    payoff = payoff * scale - premium
+    wins_recent = wins_older = None
+    if dist.get("recent") is not None and len(dist["older"]):
+        for name, arr in (("recent", dist["recent"]), ("older", dist["older"])):
+            if up:
+                w = int(np.sum(arr >= d_be))
+            else:
+                w = int(np.sum(arr <= d_be))
+            if name == "recent":
+                wins_recent = (w, len(arr))
+            else:
+                wins_older = (w, len(arr))
+
+    return dict(
+        hist_n=n,
+        hist_win=round(100.0 * wins / n, 1) if n else None,
+        hist_win_count=wins,
+        hist_win_lo=round(lo, 1), hist_win_hi=round(hi, 1),
+        hist_itm=round(float(np.mean(end_itm) * 100.0), 1),
+        hist_touch=round(float(np.mean(touched) * 100.0), 1),
+        hist_avg_pnl=round(float(np.mean(payoff)), 2),
+        hist_median_pnl=round(float(np.median(payoff)), 2),
+        hist_best_pnl=round(float(np.max(payoff)), 2),
+        hist_worst_pnl=round(float(np.min(payoff)), 2),
+        hist_profit_factor=(round(float(payoff[payoff > 0].sum() / abs(payoff[payoff < 0].sum())), 2)
+                            if (payoff > 0).any() and (payoff < 0).any() else None),
+        hist_recent_win=(round(100.0 * wins_recent[0] / wins_recent[1], 1) if wins_recent and wins_recent[1] else None),
+        hist_older_win=(round(100.0 * wins_older[0] / wins_older[1], 1) if wins_older and wins_older[1] else None),
+        hist_recent_n=(wins_recent[1] if wins_recent else None),
+    )
