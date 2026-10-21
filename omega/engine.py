@@ -1075,6 +1075,7 @@ def analyze(sym: str) -> dict | None:
         # as failed, and the cycle carries on.
         from concurrent.futures import TimeoutError as FTO
 
+        _T = {}
         _trace(sym, "queued", _T)
         pool = _analyze_pool()
         if pool is not None:
