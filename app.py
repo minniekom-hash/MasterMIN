@@ -393,9 +393,11 @@ def api_scan():
                 engine.scan_lock.release()
             except Exception:
                 pass
-        if engine.scan_stalled(90.0) and engine.scan_running():
-            log.warning("api/scan: taking over a wedged scan")
-            engine.request_scan_stop()
+        # A running pass is never told to stop from here.  A pass that has not
+        # published anything for a while is usually a slow one -- the first
+        # ticker after a cold start can take a minute and a half -- and telling
+        # it to stop meant every poll ended the pass it was waiting for, so the
+        # dashboard never received anything at all.
         if not engine.scan_lock.locked():
             threading.Thread(target=_inline_scan, daemon=True, name="omega-inline-scan").start()
             deadline = time.time() + INLINE_WAIT_SEC
