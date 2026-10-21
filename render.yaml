@@ -28,10 +28,16 @@ services:
         value: "180"
       - key: SIMS
         value: "3000"
+      # The instance has ample headroom (the scan peaks well under 300MB with
+      # gigabytes free), and a wider scan is what makes the first cold view
+      # populate quickly rather than trickling in for minutes.  Four workers
+      # roughly halves the wall-clock time of a pass.
       - key: SCAN_WORKERS
-        value: "2"
+        value: "4"
       - key: ANALYZE_SLOTS
-        value: "2"
+        value: "4"
+      - key: INLINE_WAIT_SEC
+        value: "20"
       - key: CONTACT_EMAIL
         sync: false
       - key: ALPHAVANTAGE_KEY
