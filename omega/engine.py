@@ -1300,12 +1300,18 @@ def _analyze_inner(sym: str) -> dict | None:
     _T["sim"] = int((time.time() - _t0) * 1000)
     _trace(sym, "history", _T)
     _t0 = time.time()
-    dist = sim.hist_distributions(close, high, low, n_days, HIST_WINDOW)
+    # The historical study only depends on the daily bars, which change once a
+    # day.  Recomputing it for every ticker on every pass was the most
+    # expensive thing in the analysis, and on a single-CPU instance it showed:
+    # the same numbers were being worked out again and again.
+    dist = cache.wrap(f"hist:{sym}:{n_days}", 3600,
+                      lambda: sim.hist_distributions(close, high, low, n_days, HIST_WINDOW))
     # The same rolling study over the *whole* downloaded history (up to two
     # years).  This is the source of the headline probability: it is a count of
     # what actually happened, so a bigger sample is strictly better, while the
     # six-month window is kept for the wording and the recent-vs-older split.
-    dist_full = sim.hist_distributions_full(close, high, low, n_days, 504)
+    dist_full = cache.wrap(f"histf:{sym}:{n_days}", 3600,
+                           lambda: sim.hist_distributions_full(close, high, low, n_days, 504))
     _T["hist"] = int((time.time() - _t0) * 1000)
     _trace(sym, "chain", _T)
     months = 6

@@ -1,4 +1,4 @@
-"""Omega v2 — real news & catalyst layer.
+﻿"""Omega v2 โ€” real news & catalyst layer.
 
 Replaces the Google-News-RSS hop (which rate-limits datacenter IPs and was the
 reason the old engine showed "pending" forever) with:
@@ -6,7 +6,7 @@ reason the old engine showed "pending" forever) with:
 * per-ticker RSS straight from the publisher (Yahoo, Nasdaq, Seeking Alpha)
 * headline RSS from the real newsrooms (CNBC, WSJ, MarketWatch, Bloomberg, FT,
   Investing.com, Benzinga, PR Newswire, IBD, Motley Fool, ...)
-* SEC EDGAR filings (8-K / 10-Q / 10-K) — primary-source catalysts
+* SEC EDGAR filings (8-K / 10-Q / 10-K) โ€” primary-source catalysts
 * Stocktwits crowd sentiment
 * optional keyed APIs (Alpha Vantage NEWS_SENTIMENT, NewsAPI)
 
@@ -146,7 +146,7 @@ PUBLISHERS = {
     "Bing News": ("bing.com", 0.85, "aggregator"),
 }
 
-# (publisher, url) — market-wide headline feeds, fetched once and filtered per ticker.
+# (publisher, url) โ€” market-wide headline feeds, fetched once and filtered per ticker.
 #
 # Only feeds that were *measured* to return items are kept.  Dead sources are
 # removed rather than silently retried: each one costs seconds of connect/read
@@ -305,7 +305,7 @@ def general_items():
             except Exception:
                 items = None
             if items is None:
-                _mark_src(name, False, 0, "ดึงฟีดไม่ได้")
+                _mark_src(name, False, 0, "เธ”เธถเธเธเธตเธ”เนเธกเนเนเธ”เน")
                 continue
             _mark_src(name, True, len(items))
             for it in items:
@@ -324,12 +324,12 @@ def general_items():
 # SEC EDGAR
 # --------------------------------------------------------------------------- #
 SEC_ITEMS = {
-    "1.01": "เข้าทำสัญญาสำคัญ", "1.02": "ยกเลิกสัญญาสำคัญ", "2.01": "ซื้อ/ขายสินทรัพย์",
-    "2.02": "ผลประกอบการ", "2.03": "หนี้สินใหม่", "2.04": "ผิดเงื่อนไขหนี้",
-    "2.05": "ค่าใช้จ่ายปิดโรงงาน", "2.06": "ตัดจำหน่ายสินทรัพย์", "3.01": "ถูกเพิกถอนจดทะเบียน",
-    "3.02": "ขายหุ้นนอกตลาด", "4.01": "เปลี่ยนผู้สอบบัญชี", "5.01": "เปลี่ยนการควบคุม",
-    "5.02": "เปลี่ยนผู้บริหาร/กรรมการ", "7.01": "เปิดเผยข้อมูลตามระเบียบ", "8.01": "เหตุการณ์อื่น",
-    "9.01": "เอกสารแนบ",
+    "1.01": "เน€เธเนเธฒเธ—เธณเธชเธฑเธเธเธฒเธชเธณเธเธฑเธ", "1.02": "เธขเธเน€เธฅเธดเธเธชเธฑเธเธเธฒเธชเธณเธเธฑเธ", "2.01": "เธเธทเนเธญ/เธเธฒเธขเธชเธดเธเธ—เธฃเธฑเธเธขเน",
+    "2.02": "เธเธฅเธเธฃเธฐเธเธญเธเธเธฒเธฃ", "2.03": "เธซเธเธตเนเธชเธดเธเนเธซเธกเน", "2.04": "เธเธดเธ”เน€เธเธทเนเธญเธเนเธเธซเธเธตเน",
+    "2.05": "เธเนเธฒเนเธเนเธเนเธฒเธขเธเธดเธ”เนเธฃเธเธเธฒเธ", "2.06": "เธ•เธฑเธ”เธเธณเธซเธเนเธฒเธขเธชเธดเธเธ—เธฃเธฑเธเธขเน", "3.01": "เธ–เธนเธเน€เธเธดเธเธ–เธญเธเธเธ”เธ—เธฐเน€เธเธตเธขเธ",
+    "3.02": "เธเธฒเธขเธซเธธเนเธเธเธญเธเธ•เธฅเธฒเธ”", "4.01": "เน€เธเธฅเธตเนเธขเธเธเธนเนเธชเธญเธเธเธฑเธเธเธต", "5.01": "เน€เธเธฅเธตเนเธขเธเธเธฒเธฃเธเธงเธเธเธธเธก",
+    "5.02": "เน€เธเธฅเธตเนเธขเธเธเธนเนเธเธฃเธดเธซเธฒเธฃ/เธเธฃเธฃเธกเธเธฒเธฃ", "7.01": "เน€เธเธดเธ”เน€เธเธขเธเนเธญเธกเธนเธฅเธ•เธฒเธกเธฃเธฐเน€เธเธตเธขเธ", "8.01": "เน€เธซเธ•เธธเธเธฒเธฃเธ“เนเธญเธทเนเธ",
+    "9.01": "เน€เธญเธเธชเธฒเธฃเนเธเธ",
 }
 SEC_FORMS = {"8-K": 1.0, "10-Q": 0.9, "10-K": 0.9, "SC 13D": 0.9, "SC 13G": 0.7, "S-1": 0.8,
              "424B": 0.7, "4": 0.5, "3": 0.4, "5": 0.4, "DEF 14A": 0.5, "13F-HR": 0.3}
@@ -349,14 +349,14 @@ def sec_filings(sym: str, days: int = 45, limit: int = 8):
     def load():
         cm = _cik_map()
         if not cm or sym.upper() not in cm:
-            _mark_fetch("SEC EDGAR filings", None, 0, "ไม่พบ CIK ของหุ้นนี้")
-            _mark_src("SEC EDGAR", None, 0, "ไม่พบ CIK")
+            _mark_fetch("SEC EDGAR filings", None, 0, "เนเธกเนเธเธ CIK เธเธญเธเธซเธธเนเธเธเธตเน")
+            _mark_src("SEC EDGAR", None, 0, "เนเธกเนเธเธ CIK")
             return []
         cik = cm[sym.upper()]
         j = http.json(f"https://data.sec.gov/submissions/CIK{cik:010d}.json", sec=True, timeout=(6, 15))
         if not j:
-            _mark_fetch("SEC EDGAR filings", False, 0, "ดึงข้อมูลไม่ได้")
-            _mark_src("SEC EDGAR", False, 0, "ดึงข้อมูลไม่ได้")
+            _mark_fetch("SEC EDGAR filings", False, 0, "เธ”เธถเธเธเนเธญเธกเธนเธฅเนเธกเนเนเธ”เน")
+            _mark_src("SEC EDGAR", False, 0, "เธ”เธถเธเธเนเธญเธกเธนเธฅเนเธกเนเนเธ”เน")
             return []
         rec = (j.get("filings") or {}).get("recent") or {}
         forms = rec.get("form") or []
@@ -376,7 +376,7 @@ def sec_filings(sym: str, days: int = 45, limit: int = 8):
             label = SEC_ITEMS.get((items_arr[i] or "").split(",")[0].strip(), "")
             out.append(dict(
                 form=f, date=dates[i],
-                title=f"{f} — {descs[i] if i < len(descs) and descs[i] else label or 'การยื่นเอกสารต่อ ก.ล.ต. สหรัฐ'}",
+                title=f"{f} โ€” {descs[i] if i < len(descs) and descs[i] else label or 'เธเธฒเธฃเธขเธทเนเธเน€เธญเธเธชเธฒเธฃเธ•เนเธญ เธ.เธฅ.เธ•. เธชเธซเธฃเธฑเธ'}",
                 url=f"https://www.sec.gov/Archives/edgar/data/{cik}/{adsh}/{doc}" if adsh and doc else
                     f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={cik}&type={f}",
                 items=[SEC_ITEMS.get(x.strip(), x.strip()) for x in (items_arr[i] or "").split(",") if x.strip()],
@@ -435,7 +435,7 @@ def ticker_feeds(sym: str):
         except Exception:
             items = None
         if items is None:
-            _mark_src(name, False, 0, "ดึงฟีดรายหุ้นไม่ได้")
+            _mark_src(name, False, 0, "เธ”เธถเธเธเธตเธ”เธฃเธฒเธขเธซเธธเนเธเนเธกเนเนเธ”เน")
             continue
         _mark_src(name, True, len(items))
         for it in items:
@@ -457,8 +457,8 @@ def stocktwits(sym: str):
         j = http.json(f"https://api.stocktwits.com/api/2/streams/symbol/{sym}.json",
                       headers={"Accept": "application/json"}, timeout=(5, 12))
         if not j or "messages" not in j:
-            _mark_fetch("Stocktwits", False, 0, "ดึงไม่ได้/ถูกจำกัด")
-            _mark_src("Stocktwits", False, 0, "ดึงไม่ได้")
+            _mark_fetch("Stocktwits", False, 0, "เธ”เธถเธเนเธกเนเนเธ”เน/เธ–เธนเธเธเธณเธเธฑเธ”")
+            _mark_src("Stocktwits", False, 0, "เธ”เธถเธเนเธกเนเนเธ”เน")
             return dict(bull=0, bear=0, n=0, score=0.0, items=[])
         bull = bear = 0
         scores, items = [], []
@@ -490,8 +490,8 @@ def alphavantage(sym: str):
     if not key:
         # No key means the request can only ever fail; skip it so the scan does
         # not spend a network round-trip proving that on every single ticker.
-        _mark_fetch("Alpha Vantage", None, 0, "ยังไม่ได้ตั้งค่า ALPHAVANTAGE_KEY (ไม่บังคับ)")
-        _mark_src("Alpha Vantage", None, 0, "ยังไม่ได้ตั้งค่า ALPHAVANTAGE_KEY")
+        _mark_fetch("Alpha Vantage", None, 0, "เธขเธฑเธเนเธกเนเนเธ”เนเธ•เธฑเนเธเธเนเธฒ ALPHAVANTAGE_KEY (เนเธกเนเธเธฑเธเธเธฑเธ)")
+        _mark_src("Alpha Vantage", None, 0, "เธขเธฑเธเนเธกเนเนเธ”เนเธ•เธฑเนเธเธเนเธฒ ALPHAVANTAGE_KEY")
         return None
 
     def load():
@@ -502,8 +502,8 @@ def alphavantage(sym: str):
             note = ""
             if isinstance(j, dict):
                 note = str(j.get("Note") or j.get("Information") or j.get("Error Message") or "")[:90]
-            _mark_fetch("Alpha Vantage", False, 0, note or "ไม่มีข้อมูล (โควต้า/คีย์)")
-            _mark_src("Alpha Vantage", False, 0, note or "โควต้าเต็ม/ต้องใช้คีย์")
+            _mark_fetch("Alpha Vantage", False, 0, note or "เนเธกเนเธกเธตเธเนเธญเธกเธนเธฅ (เนเธเธงเธ•เนเธฒ/เธเธตเธขเน)")
+            _mark_src("Alpha Vantage", False, 0, note or "เนเธเธงเธ•เนเธฒเน€เธ•เนเธก/เธ•เนเธญเธเนเธเนเธเธตเธขเน")
             return None
         out = []
         for a in j.get("feed", []):
@@ -532,8 +532,8 @@ def newsapi(sym: str, name: str = ""):
 
     key = os.environ.get("NEWSAPI_KEY", "").strip()
     if not key:
-        _mark_fetch("NewsAPI", None, 0, "ยังไม่ได้ตั้งค่า NEWSAPI_KEY (ไม่บังคับ)")
-        _mark_src("NewsAPI", None, 0, "ยังไม่ได้ตั้งค่า NEWSAPI_KEY")
+        _mark_fetch("NewsAPI", None, 0, "เธขเธฑเธเนเธกเนเนเธ”เนเธ•เธฑเนเธเธเนเธฒ NEWSAPI_KEY (เนเธกเนเธเธฑเธเธเธฑเธ)")
+        _mark_src("NewsAPI", None, 0, "เธขเธฑเธเนเธกเนเนเธ”เนเธ•เธฑเนเธเธเนเธฒ NEWSAPI_KEY")
         return []
 
     def load():
@@ -542,7 +542,7 @@ def newsapi(sym: str, name: str = ""):
                       headers={"X-Api-Key": key},
                       timeout=(6, 20))
         if not j or j.get("status") != "ok":
-            err = (j or {}).get("message", "ดึงไม่ได้")
+            err = (j or {}).get("message", "เธ”เธถเธเนเธกเนเนเธ”เน")
             _mark_fetch("NewsAPI", False, 0, str(err)[:90])
             _mark_src("NewsAPI", False, 0, str(err)[:90])
             return []
@@ -614,14 +614,14 @@ def _allowed(url: str) -> bool:
 
 def read_article(url: str):
     if not url or not url.startswith("http"):
-        return "none", "", "ไม่มีลิงก์"
+        return "none", "", "เนเธกเนเธกเธตเธฅเธดเธเธเน"
     if not _allowed(url):
-        return "none", "", "robots.txt ของเว็บไม่อนุญาตให้อ่าน"
+        return "none", "", "robots.txt เธเธญเธเน€เธงเนเธเนเธกเนเธญเธเธธเธเธฒเธ•เนเธซเนเธญเนเธฒเธ"
     r = http.get(url, timeout=(5, 12))
     if r is None:
-        return "none", "", "ดึงหน้าเว็บไม่ได้"
+        return "none", "", "เธ”เธถเธเธซเธเนเธฒเน€เธงเนเธเนเธกเนเนเธ”เน"
     if r.status_code in (401, 402, 403, 429):
-        return "none", "", f"HTTP {r.status_code}: เว็บบล็อก/ต้องสมัครสมาชิก"
+        return "none", "", f"HTTP {r.status_code}: เน€เธงเนเธเธเธฅเนเธญเธ/เธ•เนเธญเธเธชเธกเธฑเธเธฃเธชเธกเธฒเธเธดเธ"
     try:
         from bs4 import BeautifulSoup
 
@@ -632,8 +632,8 @@ def read_article(url: str):
         if len(body) >= 600 and not PAYWALL_RE.search(body[:3000]):
             return "full", body[:6000], ""
         if desc or body:
-            return "summary", (desc or body)[:800], "เนื้อหาเต็มถูกจำกัด (paywall/ล็อกอิน)"
-        return "none", "", "ไม่พบเนื้อหาในหน้าเว็บ"
+            return "summary", (desc or body)[:800], "เน€เธเธทเนเธญเธซเธฒเน€เธ•เนเธกเธ–เธนเธเธเธณเธเธฑเธ” (paywall/เธฅเนเธญเธเธญเธดเธ)"
+        return "none", "", "เนเธกเนเธเธเน€เธเธทเนเธญเธซเธฒเนเธเธซเธเนเธฒเน€เธงเนเธ"
     except Exception as ex:
         return "none", "", f"{type(ex).__name__}: {str(ex)[:70]}"
 
@@ -642,14 +642,14 @@ def read_article(url: str):
 # cross-source verification (same idea as the original engine, tightened)
 # --------------------------------------------------------------------------- #
 EVENTS = {
-    "ผลประกอบการ/แนวโน้ม": r"earnings|revenue|\beps\b|quarter|profit|guidance|outlook",
-    "นักวิเคราะห์ปรับเรตติ้ง": r"upgrade|downgrade|price target|rating|initiates|overweight|underweight",
-    "คดีความ/การสอบสวน": r"lawsuit|sues|probe|investigation|antitrust|settle|\bsec\b",
-    "ควบรวม/ดีล": r"acquire|acquisition|merger|buyout|takeover|stake|partnership",
-    "ผลิตภัณฑ์/อนุมัติ": r"launch|unveil|recall|\bfda\b|approval|trial",
-    "ปันผล/ซื้อหุ้นคืน/ระดมทุน": r"buyback|dividend|offering|stock split|debt",
-    "ผู้บริหาร/ปลดพนักงาน": r"\bceo\b|\bcfo\b|resign|layoff|job cuts",
-    "มหภาค/ภาษี/ดอกเบี้ย": r"tariff|rate cut|inflation|export (ban|curb|control)",
+    "เธเธฅเธเธฃเธฐเธเธญเธเธเธฒเธฃ/เนเธเธงเนเธเนเธก": r"earnings|revenue|\beps\b|quarter|profit|guidance|outlook",
+    "เธเธฑเธเธงเธดเน€เธเธฃเธฒเธฐเธซเนเธเธฃเธฑเธเน€เธฃเธ•เธ•เธดเนเธ": r"upgrade|downgrade|price target|rating|initiates|overweight|underweight",
+    "เธเธ”เธตเธเธงเธฒเธก/เธเธฒเธฃเธชเธญเธเธชเธงเธ": r"lawsuit|sues|probe|investigation|antitrust|settle|\bsec\b",
+    "เธเธงเธเธฃเธงเธก/เธ”เธตเธฅ": r"acquire|acquisition|merger|buyout|takeover|stake|partnership",
+    "เธเธฅเธดเธ•เธ เธฑเธ“เธ‘เน/เธญเธเธธเธกเธฑเธ•เธด": r"launch|unveil|recall|\bfda\b|approval|trial",
+    "เธเธฑเธเธเธฅ/เธเธทเนเธญเธซเธธเนเธเธเธทเธ/เธฃเธฐเธ”เธกเธ—เธธเธ": r"buyback|dividend|offering|stock split|debt",
+    "เธเธนเนเธเธฃเธดเธซเธฒเธฃ/เธเธฅเธ”เธเธเธฑเธเธเธฒเธ": r"\bceo\b|\bcfo\b|resign|layoff|job cuts",
+    "เธกเธซเธ เธฒเธ/เธ เธฒเธฉเธต/เธ”เธญเธเน€เธเธตเนเธข": r"tariff|rate cut|inflation|export (ban|curb|control)",
 }
 FIG_RE = re.compile(r"\$\s?\d[\d,]*(?:\.\d+)?\s?(?:billion|million|trillion|[BMT])?|\d+(?:\.\d+)?\s?%")
 
@@ -668,9 +668,9 @@ def fact_check(items):
         pos, neg = sg.count(1), sg.count(-1)
         w = sum(PUBLISHERS.get(x, ("", 0.6, ""))[1] for x in srcs)
         split = bool(pos and neg and min(pos, neg) / (pos + neg) >= 0.2)
-        verdict = "ขัดแย้ง" if split else ("ยืนยันแล้ว" if len(srcs) >= 3 and w >= 2.2 else
-                                          ("ยืนยันบางส่วน" if len(srcs) >= 2 else "ยังไม่ยืนยัน"))
-        fac = {"ยืนยันแล้ว": 1.0, "ยืนยันบางส่วน": 0.8, "ยังไม่ยืนยัน": 0.5, "ขัดแย้ง": 0.3}[verdict]
+        verdict = "เธเธฑเธ”เนเธขเนเธ" if split else ("เธขเธทเธเธขเธฑเธเนเธฅเนเธง" if len(srcs) >= 3 and w >= 2.2 else
+                                          ("เธขเธทเธเธขเธฑเธเธเธฒเธเธชเนเธงเธ" if len(srcs) >= 2 else "เธขเธฑเธเนเธกเนเธขเธทเธเธขเธฑเธ"))
+        fac = {"เธขเธทเธเธขเธฑเธเนเธฅเนเธง": 1.0, "เธขเธทเธเธขเธฑเธเธเธฒเธเธชเนเธงเธ": 0.8, "เธขเธฑเธเนเธกเนเธขเธทเธเธขเธฑเธ": 0.5, "เธเธฑเธ”เนเธขเนเธ": 0.3}[verdict]
         for i in g:
             i["f"] = max(i.get("f", 0.0), fac)
         figures = {}
@@ -766,7 +766,7 @@ def for_ticker(sym: str, name: str = "") -> dict:
                 try:
                     d, txt, why = f.result(timeout=0.5)
                 except Exception:
-                    d, txt, why = "none", "", "หมดเวลาอ่านบทความ"
+                    d, txt, why = "none", "", "เธซเธกเธ”เน€เธงเธฅเธฒเธญเนเธฒเธเธเธ—เธเธงเธฒเธก"
                 it.update(depth=d, body=txt, why=why)
         for it in dedup:
             it.setdefault("depth", "summary" if it.get("snip") else "headline")
@@ -818,7 +818,7 @@ def for_ticker(sym: str, name: str = "") -> dict:
             sig = float(np.clip(m * 1.7, -1, 1) * min(1.0, W / 2.5))
             note = ""
         else:
-            sig, note = 0.0, "ไม่พบข่าวที่มีน้ำเสียงชัดเจน"
+            sig, note = 0.0, "เนเธกเนเธเธเธเนเธฒเธงเธ—เธตเนเธกเธตเธเนเธณเน€เธชเธตเธขเธเธเธฑเธ”เน€เธเธ"
 
         # primary-source filings get their own weight; 8-K/10-Q move the needle
         fscore = 0.0
@@ -845,7 +845,7 @@ def for_ticker(sym: str, name: str = "") -> dict:
                    sorted(dedup, key=lambda i: i.get("age", 99))[:14]],
         )
 
-    return cache.wrap(f"news:{sym}", 600, load) or dict(n=0, sources={}, depth={}, checks=[], score=0.0,
+    return cache.wrap(f"news:{sym}", 900, load) or dict(n=0, sources={}, depth={}, checks=[], score=0.0,
                                                        note="", filings=[], filing_score=0.0,
                                                        social={}, items=[], engine=SENTIMENT_ENGINE)
 
@@ -862,14 +862,14 @@ def probe_all() -> dict:
         except Exception:
             items = None
         if items is None:
-            _mark_src(name, False, 0, "ดึงฟีดไม่ได้/ถูกบล็อกจาก IP เซิร์ฟเวอร์")
+            _mark_src(name, False, 0, "เธ”เธถเธเธเธตเธ”เนเธกเนเนเธ”เน/เธ–เธนเธเธเธฅเนเธญเธเธเธฒเธ IP เน€เธเธดเธฃเนเธเน€เธงเธญเธฃเน")
         else:
             _mark_src(name, True, len(items))
     for name, url in TICKER_FEEDS:
         items = fetch_feed(url.format(sym="SPY"), False, 5)
         _mark_src(name, items is not None, len(items or []),
-                  "" if items is not None else "ดึงฟีดรายหุ้นไม่ได้")
-    _mark_src("SEC EDGAR", True, 0, "ใช้งานได้ (ตรวจตอนวิเคราะห์รายหุ้น)")
+                  "" if items is not None else "เธ”เธถเธเธเธตเธ”เธฃเธฒเธขเธซเธธเนเธเนเธกเนเนเธ”เน")
+    _mark_src("SEC EDGAR", True, 0, "เนเธเนเธเธฒเธเนเธ”เน (เธ•เธฃเธงเธเธ•เธญเธเธงเธดเน€เธเธฃเธฒเธฐเธซเนเธฃเธฒเธขเธซเธธเนเธ)")
     _mark_fetch("Publisher RSS", True, 0)
     return source_status()
 

@@ -214,7 +214,7 @@ def _nasdaq_hist(sym: str, days: int = 730):
         return None
 
 
-def daily(sym: str, ttl: int = 600) -> pd.DataFrame:
+def daily(sym: str, ttl: int = 3600) -> pd.DataFrame:
     """Daily OHLCV.  Four independent providers, tried in freshness order.
 
     Yahoo is the freshest, but it is also the one that rate-limits hardest; the
@@ -222,6 +222,10 @@ def daily(sym: str, ttl: int = 600) -> pd.DataFrame:
     When Yahoo's circuit is already open we skip it entirely for this ticker --
     otherwise every name in the scan pays a timeout before reaching the
     alternates, and on a free instance that alone is enough to stall a cycle.
+
+    The daily bars change once a day, so they are kept for an hour: when the
+    price provider is refusing us, re-fetching the same two years of history
+    every few minutes was the most expensive thing the scan did.
     """
     def load():
         df = None
@@ -306,7 +310,7 @@ def _cboe_intraday(sym: str):
     return df
 
 
-def intraday(sym: str, ttl: int = 180) -> pd.DataFrame:
+def intraday(sym: str, ttl: int = 300) -> pd.DataFrame:
     def load():
         df = None
         # CBOE's intraday feed also carries per-minute CALL/PUT volume, so when
@@ -426,7 +430,7 @@ def _parse_osym(osym: str):
     return exp, ("CALL" if cp == "C" else "PUT"), int(strike) / 1000.0
 
 
-def chain(sym: str, ttl: int = 120):
+def chain(sym: str, ttl: int = 240):
     """Full delayed option chain with provider Greeks. Returns dict or None."""
 
     def load():
