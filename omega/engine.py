@@ -104,7 +104,7 @@ def _seed(sym: str) -> int:
 # The instance this runs on has a hard memory limit, and a worker that is
 # killed for using too much of it takes the whole page down with it.  The scan
 # therefore stops itself before that point rather than discovering it.
-MEMORY_CEILING_MB = env_float("MEMORY_CEILING_MB", 330.0)
+MEMORY_CEILING_MB = env_float("MEMORY_CEILING_MB", 420.0)
 
 
 def _rss_mb() -> float:
@@ -2061,6 +2061,10 @@ _SCAN_STOP = threading.Event()
 
 def request_scan_stop() -> None:
     _SCAN_STOP.set()
+
+
+def scan_stop_requested() -> bool:
+    return _SCAN_STOP.is_set()
 
 
 def scan_stalled(idle_sec: float = 150.0) -> bool:

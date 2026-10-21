@@ -274,15 +274,19 @@ def _watchdog_body():
             # above the slowest healthy pass (fifteen tickers, four at a time,
             # each with its own ceiling), otherwise the watchdog tears down a
             # scan that was working exactly as designed.
+            #
+            # And when it does fire it only says so: it does not touch the
+            # running pass.  Telling a slow pass to stop is what emptied the
+            # dashboard over and over -- the pass obeyed, ended with nothing,
+            # and the next one was told to stop as well.
             if engine.scan_stalled(STALL_SEC):
                 if not unstuck_at:
                     unstuck_at = time.time()
                     log.warning("watchdog: scan made no progress for %ss -- "
-                                "asking the pass to stop", STALL_SEC)
-                    engine.request_scan_stop()
-                elif time.time() - unstuck_at > 600.0:
-                    # Still stuck long after being asked to stop: the worker is
-                    # in a syscall we cannot interrupt.  A clean process is the
+                                "letting it run", STALL_SEC)
+                elif time.time() - unstuck_at > 900.0:
+                    # Still stuck a long time after that: the worker is in a
+                    # syscall we cannot interrupt.  A clean process is the
                     # only reliable cure, and the platform restarts us at once.
                     log.error("watchdog: scan still wedged after escalation -- "
                               "exiting so the platform starts a clean worker")
@@ -460,6 +464,8 @@ def api_boot():
                    scan_locked=engine.scan_lock.locked(),
                    scan_running=engine.scan_running(),
                    scan_stalled=engine.scan_stalled(STALL_SEC),
+                   scan_stopped=engine.scan_stop_requested(),
+                   rss_mb=round(engine._rss_mb(), 1),
                    deaths=list(WORKER_DEATHS),
                    stall_sec=STALL_SEC,
                    analyze_timeout=engine.ANALYZE_TIMEOUT,
