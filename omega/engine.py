@@ -1244,6 +1244,30 @@ def scan_once() -> None:
         scan_lock.release()
 
 
+def scan_now_blocking() -> bool:
+    """Run one scan in the calling thread if (and only if) the lock is free.
+
+    This is the safety net behind the dashboard's first paint: a free instance
+    can wedge a background pass, and a visitor who arrives then would otherwise
+    stare at an empty screen until the watchdog noticed.  Serving the request by
+    running the pass right here means the page is populated from the request
+    itself, so the site always shows data even when the background loop is stuck.
+
+    It deliberately does *not* wait for the lock: if a pass is already running
+    (healthy or not) this returns at once and the caller falls back to whatever
+    progress has been reported, rather than queueing the visitor behind it.
+    """
+    if not scan_lock.acquire(blocking=False):
+        return False
+    _HEARTBEAT["t"] = time.time()
+    _HEARTBEAT["done"] = 0
+    try:
+        _scan_once_locked()
+        return True
+    finally:
+        scan_lock.release()
+
+
 def _scan_once_locked() -> None:
     t0 = time.time()
     items, errs, cands = [], [], []

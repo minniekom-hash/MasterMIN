@@ -287,7 +287,8 @@ def general_items():
             for f in futs:
                 name, url = futs[f]
                 try:
-                    items = f.result()
+                    # Hard deadline per feed: see ticker_feeds().
+                    items = f.result(timeout=20.0)
                 except Exception:
                     items = None
                 if items is None:
@@ -387,7 +388,10 @@ def ticker_feeds(sym: str):
         for f in futs:
             name = futs[f]
             try:
-                items = f.result()
+                # A feed that accepts the connection and then never answers would
+                # otherwise park this worker for good; the scan would sit at
+                # "no progress" and the dashboard would stay empty.
+                items = f.result(timeout=20.0)
             except Exception:
                 items = None
             if items is None:
@@ -664,11 +668,29 @@ def for_ticker(sym: str, name: str = "") -> dict:
                 it.setdefault("c", None)
                 dedup.append(it)
 
-        # article bodies for the most recent few only
+        # Article bodies for the most recent few only.  These are the slowest
+        # calls in the whole news layer (an arbitrary publisher page, each up to
+        # its own connect+read timeout), so they run together rather than one
+        # after another -- in sequence a handful of slow sites could occupy a
+        # news call for minutes, and the scan only waits 25s before giving up on
+        # the whole feed set.
         head = sorted(dedup, key=lambda i: i["age"])[:max(ENRICH_N, 0)]
-        for it in head:
-            d, txt, why = cache.wrap("art:" + it.get("url", ""), 3600, lambda it=it: read_article(it.get("url", "")))
-            it.update(depth=d, body=txt, why=why)
+
+        def _read(it):
+            d, txt, why = cache.wrap("art:" + it.get("url", ""), 3600,
+                                     lambda: read_article(it.get("url", "")))
+            return d, txt, why
+
+        if head:
+            with ThreadPoolExecutor(max_workers=min(4, len(head))) as ex:
+                futs = {ex.submit(_read, it): it for it in head}
+                for f in futs:
+                    it = futs[f]
+                    try:
+                        d, txt, why = f.result(timeout=20.0)
+                    except Exception:
+                        d, txt, why = "none", "", "หมดเวลาอ่านบทความ"
+                    it.update(depth=d, body=txt, why=why)
         for it in dedup:
             it.setdefault("depth", "summary" if it.get("snip") else "headline")
             it.setdefault("body", it.get("snip", ""))

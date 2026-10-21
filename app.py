@@ -198,6 +198,24 @@ def health():
 
 @app.route("/api/scan")
 def api_scan():
+    # Never serve an empty dashboard while the answer is available: if nothing
+    # has been scanned yet, run a pass here rather than trusting a background
+    # thread that may have wedged.  A wedged pass (lock held, no progress) is
+    # taken over first, because otherwise the visitor waits behind work that is
+    # never going to finish.
+    if not (STATE.get("items") or []):
+        if engine.scan_stalled(90.0):
+            log.warning("api/scan: taking over a wedged scan")
+            try:
+                engine.scan_lock.release()
+            except Exception:
+                pass
+            engine._ANALYZE_SLOTS = threading.Semaphore(engine.ANALYZE_SLOTS)
+        if not engine.scan_lock.locked():
+            try:
+                engine.scan_now_blocking()
+            except BaseException as ex:
+                log.warning("inline scan failed: %s", ex)
     with engine._STATE_LOCK:
         payload = clean(dict(STATE))
     payload["cache"] = cache.stats()
