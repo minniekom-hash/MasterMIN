@@ -2062,31 +2062,46 @@ _ANALYZE_POOL = None
 _ANALYZE_POOL_LOCK = threading.Lock()
 
 
-def _analyze_pool():
-    """A working analysis pool, rebuilt if its threads are gone."""
+def _build_analyze_pool():
+    """Create the analysis pool and its threads, while the process is quiet.
+
+    Building it lazily meant the first analysis of the first pass had to
+    create a thread, and creating a thread while the scan is running is what
+    stalled it: the worker sat in start(), waiting for a thread that was not
+    being given to it.
+    """
     global _ANALYZE_POOL
+    try:
+        p = ThreadPoolExecutor(max_workers=ANALYZE_SLOTS + 1,
+                              thread_name_prefix="omega-analyze")
+        for _i in range(ANALYZE_SLOTS + 1):
+            try:
+                p.submit(lambda: None)
+            except Exception as ex:
+                log.warning("analyze pool: could not start a worker: %s", ex)
+                break
+        _ANALYZE_POOL = p
+    except Exception as ex:
+        log.warning("analyze pool: %s", ex)
+        _ANALYZE_POOL = None
+    return _ANALYZE_POOL
+
+
+def _analyze_pool():
+    """The analysis pool, rebuilt if its threads are gone."""
     with _ANALYZE_POOL_LOCK:
-        if _ANALYZE_POOL is not None:
-            alive = sum(1 for t in getattr(_ANALYZE_POOL, "_threads", []) if t.is_alive())
-            if alive >= 1:
-                return _ANALYZE_POOL
-            log.warning("analyze pool: %d of %d workers alive -- rebuilding", alive,
-                        getattr(_ANALYZE_POOL, "_max_workers", 0))
-            _ANALYZE_POOL = None
-        try:
-            p = ThreadPoolExecutor(max_workers=ANALYZE_SLOTS + 1,
-                                  thread_name_prefix="omega-analyze")
-            for _i in range(ANALYZE_SLOTS + 1):
-                try:
-                    p.submit(lambda: None)
-                except Exception as ex:
-                    log.warning("analyze pool: could not start a worker: %s", ex)
-                    break
-            _ANALYZE_POOL = p
-        except Exception as ex:
-            log.warning("analyze pool: %s", ex)
-            _ANALYZE_POOL = None
-        return _ANALYZE_POOL
+        if _ANALYZE_POOL is None:
+            return _build_analyze_pool()
+        alive = sum(1 for t in getattr(_ANALYZE_POOL, "_threads", []) if t.is_alive())
+        if alive >= 1:
+            return _ANALYZE_POOL
+        log.warning("analyze pool: %d of %d workers alive -- rebuilding", alive,
+                    getattr(_ANALYZE_POOL, "_max_workers", 0))
+        _ANALYZE_POOL = None
+        return _build_analyze_pool()
+
+
+_build_analyze_pool()
 # Timestamp of the last ticker to complete in the running scan.  The scan is
 # network-bound and each fetch already has a deadline, so this should always
 # move; when it stops moving the pass is wedged (a provider that answers nothing
