@@ -326,6 +326,49 @@ def intraday(sym: str, ttl: int = 180) -> pd.DataFrame:
     return df if df is not None else pd.DataFrame()
 
 
+def live_chart(sym: str, minutes: int = 90, ttl: int = 10) -> dict | None:
+    """Real price candles for the chart, one per minute.
+
+    This is the tape itself, not a drawing: the one-minute closes published by
+    the exchange's delayed-quote feed.  The cache is deliberately short, so a
+    chart that asks every fifteen seconds gets a genuinely new bar rather than
+    the same one dressed up again.
+    """
+    def load():
+        df = None
+        src = ""
+        if yahoo_ok():
+            df, _ = _yahoo_chart(sym, "1d", "5m")
+            if df is not None and len(df) > 5:
+                src = "Yahoo Chart (5 นาที)"
+        if df is None or len(df) < 5:
+            df = _cboe_intraday(sym)
+            src = "CBOE (ข้อมูลล่าช้า)"
+        if df is None or df.empty:
+            return None
+        df = df.dropna(subset=["Close"])
+        if df.empty:
+            return None
+        bars = []
+        for ts, row in df.iterrows():
+            try:
+                bars.append([int(pd.Timestamp(ts).timestamp()), float(row["Close"])])
+            except Exception:
+                continue
+        if len(bars) < 2:
+            return None
+        keep = max(minutes, 5)
+        bars = bars[-keep:]
+        last = bars[-1][1]
+        prev = float(df["Close"].iloc[-2]) if len(df) > 1 else last
+        chg = (last - prev) / prev * 100 if prev else 0.0
+        return dict(symbol=sym, price=round(last, 4), prev=round(prev, 4),
+                    change=round(chg, 3), source=src,
+                    ts=int(bars[-1][0]), bars=bars)
+
+    return cache.wrap(f"chart:{sym}", ttl, load)
+
+
 def yahoo_price(sym: str):
     def load():
         _, meta = _yahoo_chart(sym, "5d", "1d")

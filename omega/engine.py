@@ -1597,8 +1597,18 @@ def position_check(sym: str, call_strike=None, put_strike=None,
     d = data.daily(sym)
     intra = data.intraday(sym)
     spot = float(ch.get("spot") or 0.0)
+    spot_src = "CBOE (ข้อมูลล่าช้า)"
+    # The newest traded price beats the quote on the chain: the chain is
+    # cached for two minutes, the tape is not.  A position check is about
+    # "right now", so it is scored on the last price that actually traded.
+    live = data.live_chart(sym, minutes=90, ttl=10)
+    live_price = float((live or {}).get("price") or 0.0)
+    if live_price > 0:
+        spot = live_price
+        spot_src = (live or {}).get("source") or spot_src
     if spot <= 0 and len(d):
         spot = float(d["Close"].iloc[-1])
+        spot_src = "ราคาปิดวันล่าสุด"
     if spot <= 0:
         return dict(ticker=sym, error="ไม่พบราคาล่าสุดของหุ้นนี้")
 
@@ -1884,8 +1894,13 @@ def position_check(sym: str, call_strike=None, put_strike=None,
 
     return dict(
         ticker=sym, spot=round(spot, 2),
-        spot_source="CBOE (delayed)" if ch.get("spot") else "Yahoo",
+        spot_source=spot_src,
         chg_pct=ch.get("chg_pct"), asof=ch.get("ts"), fetched=ch.get("fetched"),
+        live=dict(price=round(live_price, 4) if live_price else None,
+                  change=(live or {}).get("change"),
+                  source=(live or {}).get("source"),
+                  ts=(live or {}).get("ts"),
+                  bars=[(live or {}).get("bars") or []][-90:][0] if live else []),
         expiry=exp, dte=dte,
         expiries=[dict(expiry=e, dte=t) for t, e in exps[:4]],
         trend=trend, signal=round(net, 3),

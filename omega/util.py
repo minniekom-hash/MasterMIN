@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import math
 import os
+import queue
 import random
 import socket
 import threading
@@ -287,67 +288,68 @@ _REAL_GETADDRINFO = socket.getaddrinfo
 _DNS_CACHE: dict = {}
 _DNS_INFLIGHT: dict = {}
 _DNS_LOCK = threading.Lock()
-_DNS_PENDING = 0
-# Enough lookups in flight to keep the work going, few enough that a broken
-# resolver cannot pile up an unbounded number of stuck threads.
-DNS_MAX_PENDING = 16
+_DNS_QUEUE: "queue.Queue" = queue.Queue(maxsize=64)
+# A small, fixed set of resolver threads.  Every lookup used to get a thread of
+# its own, and on a platform where a lookup can hang for ever those threads
+# piled up until starting a new one blocked -- which is what stopped the scan
+# dead.  Now a lookup that hangs costs one resolver thread and nothing else:
+# the callers waiting on it give up and the fallbacks take over.
+DNS_WORKERS = 4
 DNS_TIMEOUT = 4.0
 DNS_TTL = 60.0
+_DNS_STARTED = False
+
+
+def _dns_worker():
+    while True:
+        job = _DNS_QUEUE.get()
+        if job is None:
+            return
+        key, args, holder = job
+        try:
+            res = _REAL_GETADDRINFO(*args)
+        except Exception as ex:
+            res = ex
+        holder.append(res)
+        with _DNS_LOCK:
+            if not isinstance(res, Exception):
+                _DNS_CACHE[key] = (time.time(), res)
+
+
+def _dns_start() -> None:
+    global _DNS_STARTED
+    with _DNS_LOCK:
+        if _DNS_STARTED:
+            return
+        _DNS_STARTED = True
+    for i in range(DNS_WORKERS):
+        threading.Thread(target=_dns_worker, daemon=True, name="omega-dns%d" % i).start()
 
 
 def _getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
-    """socket.getaddrinfo, with a cache, a deadline and a single flight.
-
-    Several threads asking for the same name at once share one lookup: the
-    first one does the work and the others wait for its answer, instead of
-    each starting a lookup of their own and multiplying the load on a resolver
-    that may already be struggling.
-    """
-    global _DNS_PENDING
+    """socket.getaddrinfo, with a cache, a deadline and a bounded worker pool."""
+    _dns_start()
     key = (host, port, family, type, proto, flags)
     with _DNS_LOCK:
         hit = _DNS_CACHE.get(key)
         if hit and (time.time() - hit[0]) < DNS_TTL:
             return hit[1]
-        ev = _DNS_INFLIGHT.get(key)
-        owner = ev is None
-        if owner:
-            if _DNS_PENDING >= DNS_MAX_PENDING:
-                raise socket.gaierror(socket.EAI_AGAIN, "too many lookups in flight")
-            ev = threading.Event()
-            _DNS_INFLIGHT[key] = ev
-            _DNS_PENDING += 1
-    if not owner:
-        # Somebody else is already resolving this name: wait for their answer.
-        if not ev.wait(timeout=DNS_TIMEOUT):
-            raise socket.gaierror(socket.EAI_AGAIN, "name resolution timed out")
-        with _DNS_LOCK:
-            hit = _DNS_CACHE.get(key)
-        if hit:
-            return hit[1]
-        raise socket.gaierror(socket.EAI_AGAIN, "name resolution failed")
-
-    out = []
-
-    def _go():
-        try:
-            out.append(_REAL_GETADDRINFO(host, port, family, type, proto, flags))
-        except Exception as ex:
-            out.append(ex)
-
-    th = threading.Thread(target=_go, daemon=True, name="omega-dns")
-    th.start()
-    th.join(timeout=DNS_TIMEOUT)
+        holder = _DNS_INFLIGHT.get(key)
+        if holder is None:
+            if _DNS_QUEUE.full():
+                raise socket.gaierror(socket.EAI_AGAIN, "resolver queue is full")
+            holder = []
+            _DNS_INFLIGHT[key] = holder
+            _DNS_QUEUE.put((key, (host, port, family, type, proto, flags), holder))
+    deadline = time.time() + DNS_TIMEOUT
+    while time.time() < deadline and not holder:
+        time.sleep(0.05)
     with _DNS_LOCK:
-        _DNS_PENDING -= 1
         _DNS_INFLIGHT.pop(key, None)
-        if out and not isinstance(out[0], Exception):
-            _DNS_CACHE[key] = (time.time(), out[0])
-    ev.set()
-    if not out:
+    if not holder:
         # The resolver is not answering.  Say so, do not wait for it.
         raise socket.gaierror(socket.EAI_AGAIN, "name resolution timed out")
-    res = out[0]
+    res = holder[0]
     if isinstance(res, Exception):
         raise res
     return res
