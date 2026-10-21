@@ -405,7 +405,8 @@ function renderWatch(it){
       '<td><b>'+esc(x.ticker)+'</b><div class="tiny dim">'+esc((x.name||'').substr(0,20))+'</div>'+
         ((x.news_fresh||0)<1
           ? '<div class="tiny" style="color:var(--amber)">ไม่มีข่าวใหม่</div>'
-          : '<div class="tiny dim">ข่าวใหม่ '+num(x.news_fresh,0)+'</div>')+'</td>'+
+          : '<div class="tiny dim">ข่าวใหม่ '+num(x.news_fresh,0)+
+            (x.news_outlets?' · '+num(x.news_outlets,0)+' สำนัก':'')+'</div>')+'</td>'+
       '<td class="mono">'+money(x.spot)+'</td>'+
       '<td class="mono '+pcol(50+50*(x.signal||0))+'">'+num((x.signal||0)*100,0)+'</td>'+
       '<td><span class="tag '+(dir==='CALL'?'green':dir==='PUT'?'red':'grey')+'">'+dir+'</span></td>'+

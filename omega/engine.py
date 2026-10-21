@@ -1913,6 +1913,9 @@ def compact_for_scan(r: dict) -> dict:
     out["candidates"] = [_slim_strike(c) for c in (r.get("candidates") or [])[:4]]
     # Counts the list view displays, without the underlying bodies.
     nd = r.get("news_detail") or {}
+    srcs = nd.get("sources") or {}
+    out["news_outlets"] = len(srcs)
+    out["news_top"] = [k for k, _ in sorted(srcs.items(), key=lambda kv: -kv[1])[:3]]
     out["news_detail"] = dict(n=nd.get("n", 0), engine=nd.get("engine"),
                               sources={}, checks=[], items=[], filings=[],
                               social=nd.get("social", {}), note=nd.get("note", ""))
